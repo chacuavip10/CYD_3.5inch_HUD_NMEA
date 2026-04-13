@@ -35,6 +35,10 @@
 
 #define GPS_UART_PORT UART_NUM_2
 #define GPS_RX_GPIO GPIO_NUM_21
+#define LED_RED GPIO_NUM_4
+#define LED_GREEN GPIO_NUM_17
+#define LED_BLUE GPIO_NUM_16
+#define PIN_NUM_BK_LIGHT GPIO_NUM_27
 #define GPS_BAUD_RATE 115200
 #define UART_RX_RING_BUF 2048
 #define GPS_TASK_STACK_SZ 3072
@@ -43,6 +47,7 @@
 #define UART_READ_TIMEOUT_MS 10
 
 static const char *TAG = "GPS";
+static QueueHandle_t gps_queue;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Khởi tạo UART                                                               */
@@ -143,6 +148,7 @@ static void gps_task(void *arg)
 {
     nmea_parser_t parser;
     nmea_parser_init(&parser);
+    uint32_t last_seq = 0;
 
     static uint8_t rx_buf[UART_READ_BUF_SZ];
 
@@ -160,23 +166,44 @@ static void gps_task(void *arg)
         {
             nmea_parser_feed(&parser, rx_buf, (size_t)rx_len);
 
-            if (parser.data.updated)
+            if (parser.data.seq != last_seq)
             {
-                /*
-                 * Kiểm tra có cần sync RTC không:
-                 *   - Lần đầu: ngay khi GPS báo fix hợp lệ
-                 *   - Sau đó: mỗi GPS_RTC_SYNC_INTERVAL_S (10 phút)
-                 *
-                 * Không sync liên tục ở 10Hz – CPU overhead không cần thiết
-                 * và RTC của ESP32 đủ chính xác trong khoảng 10 phút.
-                 */
-                if (gps_rtc_should_sync(&parser.data))
-                {
-                    gps_rtc_sync(&parser.data);
-                }
+                // publish latest GPS data (overwrite queue)
+                xQueueOverwrite(gps_queue, &parser.data);
+                last_seq = parser.data.seq;
+            }
+        }
+    }
+}
 
-                print_gps_data(&parser.data);
-                parser.data.updated = false;
+static void rtc_sync_task(void *arg)
+{
+    ESP_LOGI(TAG, "Start RTC sync task");
+
+    gps_data_t d;
+    uint32_t last_seq = 0;
+
+    while (1)
+    {
+        if (xQueueReceive(gps_queue, &d, portMAX_DELAY))
+        {
+            if (d.seq == last_seq)
+            {
+                continue;
+            }
+            last_seq = d.seq;
+            print_gps_data(&d);
+            /*
+             * Kiểm tra có cần sync RTC không:
+             *   - Lần đầu: ngay khi GPS báo fix hợp lệ
+             *   - Sau đó: mỗi GPS_RTC_SYNC_INTERVAL_S (10 phút)
+             *
+             * Không sync liên tục ở 10Hz – CPU overhead không cần thiết
+             * và RTC của ESP32 đủ chính xác trong khoảng 10 phút.
+             */
+            if (gps_rtc_should_sync(&d))
+            {
+                gps_rtc_sync(&d);
             }
         }
     }
@@ -190,6 +217,21 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== GPS HUD - ATGM336H / ESP32 ===");
     ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
+    /* ─────────────────────────────────────────────────────────────────────────── */
+    /*  Turn off onboard LED                                                       */
+    /* ─────────────────────────────────────────────────────────────────────────── */
+
+    ESP_LOGI(TAG, "Turn off onboard LED");
+    gpio_config_t bk_gpio_config = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = (1ULL << PIN_NUM_BK_LIGHT) | (1ULL << LED_RED) | (1ULL << LED_BLUE) | (1ULL << LED_RED)};
+    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+    // onboard LED is inverted level ~ 1 = off / 0 = on
+    gpio_set_level(LED_RED, 1);
+    gpio_set_level(LED_BLUE, 1);
+    gpio_set_level(LED_GREEN, 1);
+    ESP_LOGI(TAG, "Turn off LCD");
+    gpio_set_level(PIN_NUM_BK_LIGHT, 0);
 
     /*
      * Bước 1: Init timezone GMT+7.
@@ -201,8 +243,11 @@ void app_main(void)
     /* Bước 2: Khởi tạo UART */
     gps_uart_init();
 
-    /* Bước 3: Tạo GPS task trên Core 1 */
-    BaseType_t ret = xTaskCreatePinnedToCore(
+    // queue size = 1 (latest data only)
+    gps_queue = xQueueCreate(1, sizeof(gps_data_t));
+
+    /* Bước 3: Tạo task*/
+    xTaskCreatePinnedToCore(
         gps_task,
         "gps_task",
         GPS_TASK_STACK_SZ,
@@ -212,8 +257,5 @@ void app_main(void)
         1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
     );
 
-    if (ret != pdPASS)
-    {
-        ESP_LOGE(TAG, "Failed to create GPS task!");
-    }
+    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 4, NULL, 1);
 }

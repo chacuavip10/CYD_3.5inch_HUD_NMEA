@@ -69,7 +69,7 @@ extern "C"
 
         /* ── Trạng thái ──────────────────────────────────────────────────────── */
         bool valid;   /**< true = fix hợp lệ (RMC status == 'A')    */
-        bool updated; /**< true = vừa có dữ liệu mới, app tự clear  */
+        uint32_t seq; // version, tracking dữ liệu mới
     } gps_data_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
@@ -105,6 +105,8 @@ extern "C"
         uint8_t cksum_calc;              /**< Checksum XOR đang tính     */
         uint8_t cksum_recv;              /**< Checksum nhận được từ câu  */
         gps_data_t data;                 /**< Dữ liệu GPS đã parse       */
+        bool gga_updated;
+        bool rmc_updated;
     } nmea_parser_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */

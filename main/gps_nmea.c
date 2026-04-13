@@ -262,7 +262,16 @@ static void parse_gga(nmea_parser_t *p, const char *sentence)
     }
 
     /* Đánh dấu đã có dữ liệu mới */
-    d->updated = true;
+    p->gga_updated = true;
+    // chỉ set updated nếu đã có cả 2
+    if (p->rmc_updated)
+    {
+        d->seq++; // tăng version
+
+        // reset cycle
+        p->gga_updated = false;
+        p->rmc_updated = false;
+    }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -347,7 +356,16 @@ static void parse_rmc(nmea_parser_t *p, const char *sentence)
         d->year = (uint16_t)(2000u + (f[4] - '0') * 10u + (f[5] - '0'));
     }
 
-    d->updated = true;
+    p->rmc_updated = true;
+
+    if (p->gga_updated)
+    {
+        d->seq++; // tăng version
+
+        // reset cycle
+        p->gga_updated = false;
+        p->rmc_updated = false;
+    }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
