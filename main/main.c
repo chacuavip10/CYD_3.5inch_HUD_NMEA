@@ -1,43 +1,57 @@
 /**
- * @file main.c
- * @brief GPS HUD – ESP32 + ATGM336H, ESP-IDF 5.x / 6.x
- *        Phiên bản với RTC local GMT+7.
+ * ============================================================================
+ *  GPS HUD – ESP32 + ATGM336H
+ *  ESP-IDF 5.x / 6.x
  *
- * Luồng xử lý thời gian:
- *   GPS NMEA (UTC) → nmea_parser → gps_data_t (UTC)
- *                                      ↓
- *                          gps_rtc_should_sync()?
- *                               ↓ YES
- *                          gps_rtc_sync()        → settimeofday() [UTC]
- *                                                       ↓
- *   Hiển thị ← gps_rtc_get_local_time() ← gettimeofday() + localtime_r() [GMT+7]
+ *  DATA FLOW:
+ *      UART → NMEA FSM → double buffer → notify →
+ *          ├── RTC task (sync time)
+ *          ├── UI task  (update screen)
+ *          └── DEBUG (optional)
  *
- * Thời gian GPS UTC vẫn lưu nguyên trong gps_data_t (không bị sửa đổi).
- * Hiển thị hoàn toàn dùng RTC local thông qua gps_rtc_get_local_time().
+ *  DESIGN GOALS:
+ *      - Lock-free GPS data sharing
+ *      - LVGL thread-safe via mutex
+ *      - No blocking in ISR
+ *      - Event-driven UI + smooth rendering
+ * ============================================================================
  */
+
+/* ========================================================================== */
+/*                              INCLUDES                                       */
+/* ========================================================================== */
 
 #include <stdio.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "driver/uart.h"
 #include "driver/gpio.h"
+
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "gps_nmea.h"
 #include "gps_rtc.h"
+#include "lvgl.h"
+#include "ui/ui.h"
+#include "esp_lcd_st7796.h"
+#include "esp_lcd_touch_xpt2046.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_panel_ops.h"
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Cấu hình chương trình                                                      */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ========================================================================== */
+/*                              CONFIGURATION                                  */
+/* ========================================================================== */
+
 #define DEBUG_TASK
+static const char *TAG = "CYD_3.5inch_GPS_HUD";
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Cấu hình phần cứng                                                         */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
+// GPIO & UART
 #define GPS_UART_PORT UART_NUM_2
 #define GPS_RX_GPIO GPIO_NUM_21
 #define LED_RED GPIO_NUM_4
@@ -48,50 +62,74 @@
 #define UART_RX_RING_BUF 2048
 #define UART_READ_BUF_SZ 256
 #define UART_READ_TIMEOUT_MS 10
-// Notify bit
+
+// Event flags
 #define EVT_GPS_UPDATE (1 << 0)
 #define EVT_RTC_SYNC (1 << 1)
 
-static const char *TAG = "CYD_3.5inch_GPS_HUD";
+// Task handles
 static TaskHandle_t gps_task_handle;
 static TaskHandle_t rtc_task_handle;
-static TaskHandle_t ui_task_handle;
-
+static TaskHandle_t ui_lvgl_task_handle;
 #ifdef DEBUG_TASK
 static TaskHandle_t dbg_task_handle;
 #endif
 
-// Double buffer, pointer swap (Producder ghi, consumer đọc)
+/* ========================================================================== */
+/*                              LVGL CONFIG                                    */
+/* ========================================================================== */
+
+static SemaphoreHandle_t s_lvgl_mutex;
+#define LVGL_LOCK() xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY)
+#define LVGL_UNLOCK() xSemaphoreGive(s_lvgl_mutex)
+
+// LCD SPI
+#define LCD_HOST SPI2_HOST
+#define LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
+#define PIN_NUM_SCLK GPIO_NUM_14
+#define PIN_NUM_MOSI GPIO_NUM_13
+#define PIN_NUM_MISO GPIO_NUM_12
+#define PIN_NUM_LCD_DC GPIO_NUM_2
+#define PIN_NUM_LCD_RST GPIO_NUM_NC
+#define PIN_NUM_LCD_CS GPIO_NUM_15
+#define PIN_NUM_TOUCH_CS GPIO_NUM_33
+#define PIN_NUM_TOUCH_INT GPIO_NUM_36
+
+// Display
+#define LCD_HOR_RES 480
+#define LCD_VER_RES 480
+#define LCD_CMD_BITS 8
+#define LCD_PARAM_BITS 8
+
+// LVGL settings
+#define LVGL_DRAW_BUF_LINES 60
+#define LVGL_TICK_PERIOD_MS 1
+#define LVGL_TASK_MAX_DELAY_MS 500
+#define LVGL_TASK_MIN_DELAY_MS 5
+#define LVGL_TASK_STACK_SIZE (8 * 1024)
+#define LVGL_TASK_PRIORITY 5
+
+/* ========================================================================== */
+/*                              GPS SHARED BUFFER                              */
+/* ========================================================================== */
+
 typedef struct
 {
     gps_data_t buf[2];
-    volatile uint8_t index; // buffer đang active (0 hoặc 1)
+    volatile uint8_t index;
 } gps_shared_t;
 
 static gps_shared_t g_gps = {0};
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Khởi tạo UART                                                               */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-static void gps_uart_init(void)
+static inline void gps_read_latest(gps_data_t *out)
 {
-    const uart_config_t uart_cfg = {
-        .baud_rate = GPS_BAUD_RATE,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
-    ESP_ERROR_CHECK(uart_param_config(GPS_UART_PORT, &uart_cfg));
-    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT,
-                                 UART_PIN_NO_CHANGE, GPS_RX_GPIO,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(GPS_UART_PORT,
-                                        UART_RX_RING_BUF, 0, 0, NULL, 0));
-    ESP_LOGI(TAG, "UART%d init OK - RX=GPIO%d - %d baud",
-             GPS_UART_PORT, GPS_RX_GPIO, GPS_BAUD_RATE);
+    uint8_t idx1, idx2;
+    do
+    {
+        idx1 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
+        *out = g_gps.buf[idx1];
+        idx2 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
+    } while (idx1 != idx2);
 }
 
 #ifdef DEBUG_TASK
@@ -163,39 +201,130 @@ static void print_gps_data(const gps_data_t *gps)
 }
 #endif
 
-static inline void gps_read_latest(gps_data_t *out)
-{
-    uint8_t idx1, idx2;
+/* ========================================================================== */
+/*                              LVGL CALLBACKS                                 */
+/* ========================================================================== */
 
-    do
-    {
-        idx1 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
-        *out = g_gps.buf[idx1];
-        idx2 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
-    } while (idx1 != idx2);
+static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
+                                    esp_lcd_panel_io_event_data_t *edata,
+                                    void *user_ctx)
+{
+    lv_display_t *disp = (lv_display_t *)user_ctx;
+    lv_display_flush_ready(disp);
+    return false;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  GPS Task                                                                    */
-/* ─────────────────────────────────────────────────────────────────────────── */
+static void lvgl_port_update_callback(lv_display_t *disp)
+{
+    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
+    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
 
+    switch (rotation)
+    {
+    case LV_DISPLAY_ROTATION_0:
+        esp_lcd_panel_swap_xy(panel_handle, false);
+        esp_lcd_panel_mirror(panel_handle, true, false);
+        break;
+    case LV_DISPLAY_ROTATION_90:
+        esp_lcd_panel_swap_xy(panel_handle, true);
+        esp_lcd_panel_mirror(panel_handle, true, true);
+        break;
+    case LV_DISPLAY_ROTATION_180:
+        esp_lcd_panel_swap_xy(panel_handle, false);
+        esp_lcd_panel_mirror(panel_handle, false, true);
+        break;
+    case LV_DISPLAY_ROTATION_270:
+        esp_lcd_panel_swap_xy(panel_handle, true);
+        esp_lcd_panel_mirror(panel_handle, false, false);
+        break;
+    }
+}
+
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
+    int x1 = area->x1, x2 = area->x2;
+    int y1 = area->y1, y2 = area->y2;
+    lv_draw_sw_rgb565_swap(px_map, (x2 + 1 - x1) * (y2 + 1 - y1));
+    esp_lcd_panel_draw_bitmap(panel_handle, x1, y1, x2 + 1, y2 + 1, px_map);
+}
+
+static void increase_lvgl_tick(void *arg)
+{
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    uint16_t touchpad_x[1] = {0};
+    uint16_t touchpad_y[1] = {0};
+    uint8_t touchpad_cnt = 0;
+
+    esp_lcd_touch_handle_t touch_pad = lv_indev_get_user_data(indev);
+    esp_lcd_touch_read_data(touch_pad);
+    bool touchpad_pressed = esp_lcd_touch_get_coordinates(
+        touch_pad, touchpad_x, touchpad_y, NULL, &touchpad_cnt, 1);
+
+    if (touchpad_pressed && touchpad_cnt > 0)
+    {
+        data->point.x = touchpad_x[0];
+        data->point.y = touchpad_y[0];
+        data->state = LV_INDEV_STATE_PRESSED;
+        ESP_LOGI("TOUCH", "x=%d y=%d state=%d", data->point.x, data->point.y, data->state);
+    }
+    else
+    {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+static void gesture_event_cb(lv_event_t *e)
+{
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+    switch (dir)
+    {
+    case LV_DIR_LEFT:
+        ESP_LOGI("UI", "Swipe LEFT");
+        // next screen
+        break;
+
+    case LV_DIR_RIGHT:
+        ESP_LOGI("UI", "Swipe RIGHT");
+        // previous screen
+        break;
+
+    case LV_DIR_TOP:
+        ESP_LOGI("UI", "Swipe UP");
+        break;
+
+    case LV_DIR_BOTTOM:
+        ESP_LOGI("UI", "Swipe DOWN");
+        break;
+
+    default:
+        break;
+    }
+}
+
+/* ========================================================================== */
+/*                              TASKS                                          */
+/* ========================================================================== */
+
+// GPS Task
 static void gps_task(void *arg)
 {
     nmea_parser_t parser;
     nmea_parser_init(&parser);
     uint32_t last_seq = 0;
-
     static uint8_t rx_buf[UART_READ_BUF_SZ];
 
-    ESP_LOGI(TAG, "GPS task started – waiting for NMEA data...");
+    ESP_LOGI(TAG, "GPS task started");
 
     while (1)
     {
-        int rx_len = uart_read_bytes(
-            GPS_UART_PORT,
-            rx_buf,
-            sizeof(rx_buf),
-            pdMS_TO_TICKS(UART_READ_TIMEOUT_MS));
+        int rx_len = uart_read_bytes(GPS_UART_PORT, rx_buf, sizeof(rx_buf),
+                                     pdMS_TO_TICKS(UART_READ_TIMEOUT_MS));
 
         if (rx_len > 0)
         {
@@ -203,30 +332,29 @@ static void gps_task(void *arg)
 
             if (parser.data.seq != last_seq)
             {
-                // publish latest GPS data (overwrite queue)
-                uint8_t next = g_gps.index ^ 1; // flip 0<->1
-                g_gps.buf[next] = parser.data;  // copy struct
-                // đảm bảo data write xong trước khi publish index
+                uint8_t next = g_gps.index ^ 1;
+                g_gps.buf[next] = parser.data;
                 __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
 
-                // notify consumers
                 xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
-                xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
+                xTaskNotify(ui_lvgl_task_handle, EVT_GPS_UPDATE, eSetBits);
 #ifdef DEBUG_TASK
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
-
 #endif
-
                 last_seq = parser.data.seq;
             }
+        }
+        else
+        {
+            taskYIELD();
         }
     }
 }
 
+// RTC Sync Task
 static void rtc_sync_task(void *arg)
 {
     ESP_LOGI(TAG, "RTC sync task started");
-
     gps_data_t d;
     uint32_t last_seq = 0;
 
@@ -235,23 +363,13 @@ static void rtc_sync_task(void *arg)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         gps_read_latest(&d);
         if (d.seq == last_seq)
-        {
             continue;
-        }
         last_seq = d.seq;
-        /*
-         * Kiểm tra có cần sync RTC không:
-         *   - Lần đầu: ngay khi GPS báo fix hợp lệ
-         *   - Sau đó: mỗi GPS_RTC_SYNC_INTERVAL_S (10 phút)
-         *
-         * Không sync liên tục ở 10Hz – CPU overhead không cần thiết
-         * và RTC của ESP32 đủ chính xác trong khoảng 10 phút.
-         */
+
         if (gps_rtc_should_sync(&d))
         {
             gps_rtc_sync(&d);
-            // notify UI & debug có sync
-            xTaskNotify(ui_task_handle, EVT_RTC_SYNC, eSetBits);
+            xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC, eSetBits);
 #ifdef DEBUG_TASK
             xTaskNotify(dbg_task_handle, EVT_RTC_SYNC, eSetBits);
 #endif
@@ -259,44 +377,77 @@ static void rtc_sync_task(void *arg)
     }
 }
 
-static void ui_task(void *arg)
+/* ========================================================================== */
+/*                              UI + LVGL TASK (GỘP)                           */
+/* ========================================================================== */
+
+/**
+ * @brief UI + LVGL combined task
+ *
+ * Task này đảm nhiệm cả hai vai trò:
+ *   1. Gọi lv_timer_handler() để xử lý LVGL timer và render
+ *   2. Nhận notification từ GPS task để cập nhật UI
+ *
+ * Vì chỉ có MỘT task duy nhất gọi LVGL API:
+ *   - KHÔNG cần mutex (LVGL_LOCK/UNLOCK)
+ *   - An toàn với lv_tick_inc() từ ISR
+ *   - Đơn giản hóa kiến trúc
+ */
+static void ui_lvgl_task(void *arg)
 {
-    ESP_LOGI(TAG, "UI task started");
+    ESP_LOGI(TAG, "UI+LVGL combined task started");
+
     uint32_t events;
+    uint32_t time_till_next_ms;
     gps_data_t d;
     uint32_t last_seq = 0;
 
     while (1)
     {
-        // wait notify hoặc timeout 1s (force render new frame)
-        xTaskNotifyWait(
-            0,          // don't clear on entry
-            0xFFFFFFFF, // clear all bits on exit
-            &events,
-            pdMS_TO_TICKS(1000));
+        // ===== PHẦN 1: XỬ LÝ LVGL (CÓ MUTEX) =====
+        LVGL_LOCK();
+        time_till_next_ms = lv_timer_handler();
 
-        if (events & EVT_GPS_UPDATE)
+        // ===== PHẦN 2: XỬ LÝ SỰ KIỆN UI TRONG KHI VẪN GIỮ MUTEX =====
+        // Kiểm tra notification từ GPS task với timeout = 0 (không chờ)
+        if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE)
         {
-            gps_read_latest(&d);
 
-            // nếu có data mới → update full
-            if (d.seq != last_seq)
+            if (events & EVT_GPS_UPDATE)
             {
-                last_seq = d.seq;
+                gps_read_latest(&d);
 
-                // ui_update(d.speed_kmh, d.sats, d.fix, d.utc_time);
+                if (d.seq != last_seq)
+                {
+                    last_seq = d.seq;
+                    // TODO: Cập nhật UI với dữ liệu mới
+                    // ui_update_gps_data(&d);
+                }
+                else
+                {
+                    // TODO: Chỉ cập nhật thời gian
+                    // ui_update_time_only();
+                }
             }
-            else
+
+            if (events & EVT_RTC_SYNC)
             {
-                // không có data mới → vẫn refresh (ví dụ clock)
-                // ui_update_time_only(d.utc_time);
+                // TODO: Hiển thị icon RTC đã đồng bộ
+                // ui_show_rtc_synced();
             }
         }
+        LVGL_UNLOCK();
 
-        if (events & EVT_RTC_SYNC)
-        {
-            // show RTC Sync icon
-        }
+        // ===== PHẦN 3: DELAY THÔNG MINH =====
+        // LVGL trả về thời gian (ms) cần đợi đến timer tiếp theo
+        // Clamp giá trị để đảm bảo:
+        //   - Tối thiểu 5ms (tránh busy-wait, cho task khác chạy)
+        //   - Tối đa 500ms (đảm bảo UI responsive với GPS update)
+        // in case of triggering a task watch dog time out
+        time_till_next_ms = LV_MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
+        // in case of lvgl display not ready yet
+        time_till_next_ms = LV_MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(time_till_next_ms));
     }
 }
 
@@ -310,103 +461,178 @@ static void debug_task(void *arg)
 
     while (1)
     {
-        xTaskNotifyWait(
-            0,          // don't clear on entry
-            0xFFFFFFFF, // clear all bits on exit
-            &events,
-            portMAX_DELAY);
+        xTaskNotifyWait(0, 0xFFFFFFFF, &events, portMAX_DELAY);
+
         if (events & EVT_GPS_UPDATE)
         {
             gps_read_latest(&d);
             if (d.seq == last_seq)
-            {
                 continue;
-            }
             last_seq = d.seq;
             print_gps_data(&d);
         }
         if (events & EVT_RTC_SYNC)
         {
-            ESP_LOGI("DEBUG", "Sync RTC Time");
+            ESP_LOGI("DEBUG", "RTC synced");
         }
     }
 }
 #endif
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/*  Entry point                                                                  */
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ========================================================================== */
+/*                              INITIALIZATION                                 */
+/* ========================================================================== */
+
+static void gps_uart_init(void)
+{
+    const uart_config_t uart_cfg = {
+        .baud_rate = GPS_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    ESP_ERROR_CHECK(uart_param_config(GPS_UART_PORT, &uart_cfg));
+    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT, UART_PIN_NO_CHANGE, GPS_RX_GPIO,
+                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(GPS_UART_PORT, UART_RX_RING_BUF, 0, 0, NULL, 0));
+    ESP_LOGI(TAG, "UART%d init OK - RX=GPIO%d - %d baud", GPS_UART_PORT, GPS_RX_GPIO, GPS_BAUD_RATE);
+}
 
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== GPS HUD - ATGM336H / ESP32 ===");
     ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
-    /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  Turn off onboard LED                                                       */
-    /* ─────────────────────────────────────────────────────────────────────────── */
 
-    ESP_LOGI(TAG, "Turn off onboard LED");
+    // LVGL mutex
+    s_lvgl_mutex = xSemaphoreCreateMutex();
+    configASSERT(s_lvgl_mutex);
+
+    // GPIO init
     gpio_config_t bk_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (1ULL << PIN_NUM_BK_LIGHT) | (1ULL << LED_RED) | (1ULL << LED_BLUE) | (1ULL << LED_RED)};
+        .pin_bit_mask = (1ULL << PIN_NUM_BK_LIGHT) | (1ULL << LED_RED) |
+                        (1ULL << LED_BLUE) | (1ULL << LED_GREEN),
+    };
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
-    // onboard LED is inverted level ~ 1 = off / 0 = on
     gpio_set_level(LED_RED, 1);
     gpio_set_level(LED_BLUE, 1);
     gpio_set_level(LED_GREEN, 1);
-    ESP_LOGI(TAG, "Turn off LCD");
     gpio_set_level(PIN_NUM_BK_LIGHT, 0);
 
-    /*
-     * Bước 1: Init timezone GMT+7.
-     * PHẢI gọi trước mọi hàm time() / localtime() / gettimeofday()
-     * để tzset() có hiệu lực sớm nhất.
-     */
-    gps_rtc_init();
+    // SPI bus
+    spi_bus_config_t buscfg = {
+        .sclk_io_num = PIN_NUM_SCLK,
+        .mosi_io_num = PIN_NUM_MOSI,
+        .miso_io_num = PIN_NUM_MISO,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = LCD_HOR_RES * 80 * sizeof(uint16_t),
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    /* Bước 2: Khởi tạo UART */
+    // LCD Panel IO
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    esp_lcd_panel_io_spi_config_t io_config = {
+        .dc_gpio_num = PIN_NUM_LCD_DC,
+        .cs_gpio_num = PIN_NUM_LCD_CS,
+        .pclk_hz = LCD_PIXEL_CLOCK_HZ,
+        .lcd_cmd_bits = LCD_CMD_BITS,
+        .lcd_param_bits = LCD_PARAM_BITS,
+        .spi_mode = 0,
+        .trans_queue_depth = 10,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle));
+
+    // LCD Panel
+    esp_lcd_panel_handle_t panel_handle = NULL;
+    esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = PIN_NUM_LCD_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .bits_per_pixel = 16,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle));
+    esp_lcd_panel_reset(panel_handle);
+    esp_lcd_panel_init(panel_handle);
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    gpio_set_level(PIN_NUM_BK_LIGHT, 1);
+
+    // LVGL Init
+    lv_init();
+    lv_display_t *display = lv_display_create(LCD_HOR_RES, LCD_VER_RES);
+    size_t draw_buffer_sz = LCD_HOR_RES * LVGL_DRAW_BUF_LINES * sizeof(lv_color16_t);
+    void *buf1 = spi_bus_dma_memory_alloc(LCD_HOST, draw_buffer_sz, 0);
+    void *buf2 = spi_bus_dma_memory_alloc(LCD_HOST, draw_buffer_sz, 0);
+    configASSERT(buf1 && buf2);
+
+    lv_display_set_buffers(display, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_user_data(display, panel_handle);
+    lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_flush_cb(display, lvgl_flush_cb);
+
+    // LVGL tick timer
+    const esp_timer_create_args_t lvgl_tick_timer_args = {
+        .callback = &increase_lvgl_tick,
+        .name = "lvgl_tick",
+    };
+    esp_timer_handle_t lvgl_tick_timer = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
+
+    // Flush ready callback
+    const esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = notify_lvgl_flush_ready,
+    };
+    ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io_handle, &cbs, display));
+
+    // Touch
+    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+    esp_lcd_panel_io_spi_config_t tp_io_config = {
+        .cs_gpio_num = PIN_NUM_TOUCH_CS,
+        .dc_gpio_num = GPIO_NUM_NC,
+        .spi_mode = 0,
+        .pclk_hz = 2 * 1000 * 1000,
+        .trans_queue_depth = 3,
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &tp_io_config, &tp_io_handle));
+
+    esp_lcd_touch_config_t tp_cfg = {
+        .x_max = LCD_HOR_RES,
+        .y_max = LCD_VER_RES,
+        .rst_gpio_num = -1,
+        .int_gpio_num = PIN_NUM_TOUCH_INT,
+        .flags = {.swap_xy = 0, .mirror_x = 1, .mirror_y = 1},
+    };
+    esp_lcd_touch_handle_t tp = NULL;
+    ESP_ERROR_CHECK(esp_lcd_touch_new_spi_xpt2046(tp_io_handle, &tp_cfg, &tp));
+
+    lv_indev_t *indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_display(indev, display);
+    lv_indev_set_user_data(indev, tp);
+    lv_indev_set_read_cb(indev, lvgl_touch_cb);
+    lv_obj_add_event_cb(lv_scr_act(), gesture_event_cb, LV_EVENT_GESTURE, NULL);
+
+    LVGL_LOCK();
+    lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
+    lvgl_port_update_callback(display);
+    ui_init();
+    LVGL_UNLOCK();
+
+    // RTC & UART
+    gps_rtc_init();
     gps_uart_init();
 
-    /* Bước 3: Tạo task*/
-    xTaskCreatePinnedToCore(
-        gps_task,
-        "gps_task",
-        3072,
-        NULL,
-        5,
-        &gps_task_handle,
-        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
-    );
-
-    xTaskCreatePinnedToCore(
-        ui_task,
-        "ui_task",
-        8192,
-        NULL,
-        5,
-        &ui_task_handle,
-        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
-    );
-
-    xTaskCreatePinnedToCore(
-        rtc_sync_task,
-        "rtc_sync_task",
-        2048,
-        NULL,
-        5,
-        &rtc_task_handle,
-        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
-    );
-
+    // Create tasks
+    // LVGL task
+    xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL,
+                            LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
+    xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 1);
+    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 1);
 #ifdef DEBUG_TASK
-    xTaskCreatePinnedToCore(
-        debug_task,
-        "debug_task",
-        2048,
-        NULL,
-        5,
-        &dbg_task_handle,
-        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
-    );
+    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
 #endif
 }

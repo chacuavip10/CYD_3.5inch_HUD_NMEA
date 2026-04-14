@@ -1,0 +1,24 @@
+{
+  "files": [
+    "actions.h",
+    "fonts.h",
+    "images.c",
+    "images.h",
+    "screens.c",
+    "screens.h",
+    "structs.h",
+    "styles.c",
+    "styles.h",
+    "ui.c",
+    "ui.h",
+    "ui_font_jb_130.c",
+    "ui_font_jb_30.c",
+    "ui_image_satlite_white_40px.c",
+    "ui_image_signal_ex_48px.c",
+    "ui_image_signal_good_48px.c",
+    "ui_image_signal_moderate_48px.c",
+    "ui_image_signal_poor_48px.c",
+    "ui_image_sync_48px.c",
+    "vars.h"
+  ]
+}
