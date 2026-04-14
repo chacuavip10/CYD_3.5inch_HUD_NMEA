@@ -169,9 +169,9 @@ static inline void gps_read_latest(gps_data_t *out)
 
     do
     {
-        idx1 = g_gps.index;
+        idx1 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
         *out = g_gps.buf[idx1];
-        idx2 = g_gps.index;
+        idx2 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
     } while (idx1 != idx2);
 }
 
@@ -206,7 +206,8 @@ static void gps_task(void *arg)
                 // publish latest GPS data (overwrite queue)
                 uint8_t next = g_gps.index ^ 1; // flip 0<->1
                 g_gps.buf[next] = parser.data;  // copy struct
-                g_gps.index = next;             // publish
+                // đảm bảo data write xong trước khi publish index
+                __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
 
                 // notify consumers
                 xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
