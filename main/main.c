@@ -30,6 +30,11 @@
 #include "gps_rtc.h"
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/*  Cấu hình chương trình                                                      */
+/* ─────────────────────────────────────────────────────────────────────────── */
+#define DEBUG_TASK
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /*  Cấu hình phần cứng                                                         */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -41,13 +46,29 @@
 #define PIN_NUM_BK_LIGHT GPIO_NUM_27
 #define GPS_BAUD_RATE 115200
 #define UART_RX_RING_BUF 2048
-#define GPS_TASK_STACK_SZ 3072
-#define GPS_TASK_PRIORITY 5
 #define UART_READ_BUF_SZ 256
 #define UART_READ_TIMEOUT_MS 10
+// Notify bit
+#define EVT_GPS_UPDATE (1 << 0)
+#define EVT_RTC_SYNC (1 << 1)
 
-static const char *TAG = "GPS";
-static QueueHandle_t gps_queue;
+static const char *TAG = "CYD_3.5inch_GPS_HUD";
+static TaskHandle_t gps_task_handle;
+static TaskHandle_t rtc_task_handle;
+static TaskHandle_t ui_task_handle;
+
+#ifdef DEBUG_TASK
+static TaskHandle_t dbg_task_handle;
+#endif
+
+// Double buffer, pointer swap (Producder ghi, consumer đọc)
+typedef struct
+{
+    gps_data_t buf[2];
+    volatile uint8_t index; // buffer đang active (0 hoặc 1)
+} gps_shared_t;
+
+static gps_shared_t g_gps = {0};
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Khởi tạo UART                                                               */
@@ -73,6 +94,7 @@ static void gps_uart_init(void)
              GPS_UART_PORT, GPS_RX_GPIO, GPS_BAUD_RATE);
 }
 
+#ifdef DEBUG_TASK
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Hiển thị dữ liệu GPS – thời gian lấy từ RTC local                         */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -96,9 +118,9 @@ static void print_gps_data(const gps_data_t *gps)
     /* ── Thời gian từ RTC local (GMT+7) ─────────────────────────────── */
     if (lt.valid)
     {
-        ESP_LOGI(TAG, "Time (GMT+7): %02d:%02d:%02d.%03d",
+        ESP_LOGI("DEBUG", "Time (GMT+7): %02d:%02d:%02d.%03d",
                  lt.hour, lt.minute, lt.second, lt.millisecond);
-        ESP_LOGI(TAG, "Date (GMT+7): %02d/%02d/%04d",
+        ESP_LOGI("DEBUG", "Date (GMT+7): %02d/%02d/%04d",
                  lt.day, lt.month, lt.year);
     }
     else
@@ -107,37 +129,50 @@ static void print_gps_data(const gps_data_t *gps)
          * RTC chưa được sync lần nào (chờ GPS fix lần đầu).
          * Hiển thị UTC thô từ GPS làm fallback tạm thời.
          */
-        ESP_LOGI(TAG, "Time (UTC) : %02d:%02d:%02d  [waiting for RTC sync]",
+        ESP_LOGI("DEBUG", "Time (UTC) : %02d:%02d:%02d  [waiting for RTC sync]",
                  gps->hour, gps->minute, gps->second);
-        ESP_LOGI(TAG, "Date (UTC) : %02d/%02d/%04d",
+        ESP_LOGI("DEBUG", "Date (UTC) : %02d/%02d/%04d",
                  gps->day, gps->month, gps->year);
     }
     if (gps->valid)
     {
         /* ── Trạng thái fix ──────────────────────────────────────────────── */
-        ESP_LOGI(TAG, "Fix valid  : YES");
+        ESP_LOGI("DEBUG", "Fix valid  : YES");
 
         /* ── Vị trí ──────────────────────────────────────────────────────── */
-        ESP_LOGI(TAG, "Latitude   : %.7f %s",
+        ESP_LOGI("DEBUG", "Latitude   : %.7f %s",
                  gps->latitude >= 0 ? gps->latitude : -gps->latitude,
                  gps->latitude >= 0 ? "N" : "S");
-        ESP_LOGI(TAG, "Longitude  : %.7f %s",
+        ESP_LOGI("DEBUG", "Longitude  : %.7f %s",
                  gps->longitude >= 0 ? gps->longitude : -gps->longitude,
                  gps->longitude >= 0 ? "E" : "W");
 
         /* ── Chất lượng tín hiệu ─────────────────────────────────────────── */
-        ESP_LOGI(TAG, "Satellites : %d", gps->satellites);
-        ESP_LOGI(TAG, "HDOP       : %.2f", (double)gps->hdop);
-        ESP_LOGI(TAG, "Altitude   : %.1f m", (double)gps->altitude_m);
+        ESP_LOGI("DEBUG", "Satellites : %d", gps->satellites);
+        ESP_LOGI("DEBUG", "HDOP       : %.2f", (double)gps->hdop);
+        ESP_LOGI("DEBUG", "Altitude   : %.1f m", (double)gps->altitude_m);
 
         /* ── Chuyển động ─────────────────────────────────────────────────── */
-        ESP_LOGI(TAG, "Speed      : %.2f km/h", (double)gps->speed_kmh);
-        ESP_LOGI(TAG, "Course     : %.1f deg", (double)gps->course_deg);
+        ESP_LOGI("DEBUG", "Speed      : %.2f km/h", (double)gps->speed_kmh);
+        ESP_LOGI("DEBUG", "Course     : %.1f deg", (double)gps->course_deg);
     }
     else
     {
-        ESP_LOGI(TAG, "Fix valid  : NO");
+        ESP_LOGI("DEBUG", "Fix valid  : NO");
     }
+}
+#endif
+
+static inline void gps_read_latest(gps_data_t *out)
+{
+    uint8_t idx1, idx2;
+
+    do
+    {
+        idx1 = g_gps.index;
+        *out = g_gps.buf[idx1];
+        idx2 = g_gps.index;
+    } while (idx1 != idx2);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -169,7 +204,18 @@ static void gps_task(void *arg)
             if (parser.data.seq != last_seq)
             {
                 // publish latest GPS data (overwrite queue)
-                xQueueOverwrite(gps_queue, &parser.data);
+                uint8_t next = g_gps.index ^ 1; // flip 0<->1
+                g_gps.buf[next] = parser.data;  // copy struct
+                g_gps.index = next;             // publish
+
+                // notify consumers
+                xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
+                xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
+#ifdef DEBUG_TASK
+                xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
+
+#endif
+
                 last_seq = parser.data.seq;
             }
         }
@@ -178,36 +224,113 @@ static void gps_task(void *arg)
 
 static void rtc_sync_task(void *arg)
 {
-    ESP_LOGI(TAG, "Start RTC sync task");
+    ESP_LOGI(TAG, "RTC sync task started");
 
     gps_data_t d;
     uint32_t last_seq = 0;
 
     while (1)
     {
-        if (xQueueReceive(gps_queue, &d, portMAX_DELAY))
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        gps_read_latest(&d);
+        if (d.seq == last_seq)
         {
+            continue;
+        }
+        last_seq = d.seq;
+        /*
+         * Kiểm tra có cần sync RTC không:
+         *   - Lần đầu: ngay khi GPS báo fix hợp lệ
+         *   - Sau đó: mỗi GPS_RTC_SYNC_INTERVAL_S (10 phút)
+         *
+         * Không sync liên tục ở 10Hz – CPU overhead không cần thiết
+         * và RTC của ESP32 đủ chính xác trong khoảng 10 phút.
+         */
+        if (gps_rtc_should_sync(&d))
+        {
+            gps_rtc_sync(&d);
+            // notify UI & debug có sync
+            xTaskNotify(ui_task_handle, EVT_RTC_SYNC, eSetBits);
+#ifdef DEBUG_TASK
+            xTaskNotify(dbg_task_handle, EVT_RTC_SYNC, eSetBits);
+#endif
+        }
+    }
+}
+
+static void ui_task(void *arg)
+{
+    ESP_LOGI(TAG, "UI task started");
+    uint32_t events;
+    gps_data_t d;
+    uint32_t last_seq = 0;
+
+    while (1)
+    {
+        // wait notify hoặc timeout 1s (force render new frame)
+        xTaskNotifyWait(
+            0,          // don't clear on entry
+            0xFFFFFFFF, // clear all bits on exit
+            &events,
+            pdMS_TO_TICKS(1000));
+
+        if (events & EVT_GPS_UPDATE)
+        {
+            gps_read_latest(&d);
+
+            // nếu có data mới → update full
+            if (d.seq != last_seq)
+            {
+                last_seq = d.seq;
+
+                // ui_update(d.speed_kmh, d.sats, d.fix, d.utc_time);
+            }
+            else
+            {
+                // không có data mới → vẫn refresh (ví dụ clock)
+                // ui_update_time_only(d.utc_time);
+            }
+        }
+
+        if (events & EVT_RTC_SYNC)
+        {
+            // show RTC Sync icon
+        }
+    }
+}
+
+#ifdef DEBUG_TASK
+static void debug_task(void *arg)
+{
+    ESP_LOGI("DEBUG", "Start debug task");
+    uint32_t events;
+    gps_data_t d;
+    uint32_t last_seq = 0;
+
+    while (1)
+    {
+        xTaskNotifyWait(
+            0,          // don't clear on entry
+            0xFFFFFFFF, // clear all bits on exit
+            &events,
+            portMAX_DELAY);
+        if (events & EVT_GPS_UPDATE)
+        {
+            gps_read_latest(&d);
             if (d.seq == last_seq)
             {
                 continue;
             }
             last_seq = d.seq;
             print_gps_data(&d);
-            /*
-             * Kiểm tra có cần sync RTC không:
-             *   - Lần đầu: ngay khi GPS báo fix hợp lệ
-             *   - Sau đó: mỗi GPS_RTC_SYNC_INTERVAL_S (10 phút)
-             *
-             * Không sync liên tục ở 10Hz – CPU overhead không cần thiết
-             * và RTC của ESP32 đủ chính xác trong khoảng 10 phút.
-             */
-            if (gps_rtc_should_sync(&d))
-            {
-                gps_rtc_sync(&d);
-            }
+        }
+        if (events & EVT_RTC_SYNC)
+        {
+            ESP_LOGI("DEBUG", "Sync RTC Time");
         }
     }
 }
+#endif
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Entry point                                                                  */
@@ -243,19 +366,46 @@ void app_main(void)
     /* Bước 2: Khởi tạo UART */
     gps_uart_init();
 
-    // queue size = 1 (latest data only)
-    gps_queue = xQueueCreate(1, sizeof(gps_data_t));
-
     /* Bước 3: Tạo task*/
     xTaskCreatePinnedToCore(
         gps_task,
         "gps_task",
-        GPS_TASK_STACK_SZ,
+        3072,
         NULL,
-        GPS_TASK_PRIORITY,
-        NULL,
+        5,
+        &gps_task_handle,
         1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
     );
 
-    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(
+        ui_task,
+        "ui_task",
+        8192,
+        NULL,
+        5,
+        &ui_task_handle,
+        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
+    );
+
+    xTaskCreatePinnedToCore(
+        rtc_sync_task,
+        "rtc_sync_task",
+        2048,
+        NULL,
+        5,
+        &rtc_task_handle,
+        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
+    );
+
+#ifdef DEBUG_TASK
+    xTaskCreatePinnedToCore(
+        debug_task,
+        "debug_task",
+        2048,
+        NULL,
+        5,
+        &dbg_task_handle,
+        1 /* Core 1 – tránh xung đột WiFi/BT nếu thêm sau */
+    );
+#endif
 }
