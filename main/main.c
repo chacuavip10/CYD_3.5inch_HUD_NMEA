@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -43,12 +44,13 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
+#include "images.h"
 
 /* ========================================================================== */
 /*                              CONFIGURATION                                  */
 /* ========================================================================== */
 
-#define DEBUG_TASK
+#define DEBUG_TASK 0
 static const char *TAG = "CYD_3.5inch_GPS_HUD";
 
 // GPIO & UART
@@ -62,6 +64,7 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define UART_RX_RING_BUF 2048
 #define UART_READ_BUF_SZ 256
 #define UART_READ_TIMEOUT_MS 10
+#define GPS_COM_TIMEOUT_MS 2000
 
 // Event flags
 #define EVT_GPS_UPDATE (1 << 0)
@@ -71,7 +74,7 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 static TaskHandle_t gps_task_handle;
 static TaskHandle_t rtc_task_handle;
 static TaskHandle_t ui_lvgl_task_handle;
-#ifdef DEBUG_TASK
+#if DEBUG_TASK
 static TaskHandle_t dbg_task_handle;
 #endif
 
@@ -132,7 +135,48 @@ static inline void gps_read_latest(gps_data_t *out)
     } while (idx1 != idx2);
 }
 
-#ifdef DEBUG_TASK
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  HDOP Helper                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+typedef enum
+{
+    SIG_NOSIGNAL = 0,
+    SIG_BAD,
+    SIG_MODERATE,
+    SIG_GOOD,
+    SIG_EXCELLENT
+} signal_level_t;
+
+static inline signal_level_t hdop_to_level(float hdop)
+{
+    if (hdop > 5.0f)
+        return SIG_BAD;
+    if (hdop > 2.5f)
+        return SIG_MODERATE;
+    if (hdop > 1.5f)
+        return SIG_GOOD;
+    return SIG_EXCELLENT;
+}
+
+static const void *signal_img_table[] = {
+    &img_no_signal_48px,       // SIG_NOSIGNAL
+    &img_signal_poor_48px,     // SIG_BAD
+    &img_signal_moderate_48px, // SIG_MODERATE
+    &img_signal_good_48px,     // SIG_GOOD
+    &img_signal_ex_48px        // SIG_EXCELLENT
+};
+
+bool time_equal(local_time_t *a, local_time_t *b)
+{
+    return (a->year == b->year) &&
+           (a->month == b->month) &&
+           (a->day == b->day) &&
+           (a->hour == b->hour) &&
+           (a->minute == b->minute) &&
+           (a->second == b->second) &&
+           (a->valid == b->valid);
+}
+#if DEBUG_TASK
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Hiển thị dữ liệu GPS – thời gian lấy từ RTC local                         */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -204,6 +248,30 @@ static void print_gps_data(const gps_data_t *gps)
 /* ========================================================================== */
 /*                              LVGL CALLBACKS                                 */
 /* ========================================================================== */
+static lv_timer_t *img_timer = NULL;
+static void hide_image_cb(lv_timer_t *t)
+{
+    lv_obj_t *img = (lv_obj_t *)lv_timer_get_user_data(t);
+
+    lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN); // ẩn image
+
+    lv_timer_del(t); // one-shot
+}
+
+void ui_show_image_2s(lv_obj_t *img)
+{
+    lv_obj_clear_flag(img, LV_OBJ_FLAG_HIDDEN);
+
+    if (img_timer)
+    {
+        lv_timer_set_user_data(img_timer, img);
+        lv_timer_reset(img_timer);
+    }
+    else
+    {
+        img_timer = lv_timer_create(hide_image_cb, 2000, img);
+    }
+}
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
                                     esp_lcd_panel_io_event_data_t *edata,
@@ -309,7 +377,7 @@ static void gps_task(void *arg)
 
                 xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
                 xTaskNotify(ui_lvgl_task_handle, EVT_GPS_UPDATE, eSetBits);
-#ifdef DEBUG_TASK
+#if DEBUG_TASK
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
 #endif
                 last_seq = parser.data.seq;
@@ -341,7 +409,7 @@ static void rtc_sync_task(void *arg)
         {
             gps_rtc_sync(&d);
             xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC, eSetBits);
-#ifdef DEBUG_TASK
+#if DEBUG_TASK
             xTaskNotify(dbg_task_handle, EVT_RTC_SYNC, eSetBits);
 #endif
         }
@@ -371,7 +439,16 @@ static void ui_lvgl_task(void *arg)
     uint32_t events;
     uint32_t time_till_next_ms;
     gps_data_t d;
-    uint32_t last_seq = 0;
+    gps_data_t last_data = {};
+    uint8_t spinGps = 0, spinUi = 0;
+    bool needDraw = true;
+    uint8_t speed_compensation = 0;
+    signal_level_t last_signal = 0xFF; // invalid initial
+    uint32_t last_gps_tick = 0;
+    bool gps_timeout = false; // start assume no signal
+    local_time_t current_time = {};
+    local_time_t last_time = {};
+    last_time.valid = true;
 
     while (1)
     {
@@ -379,20 +456,127 @@ static void ui_lvgl_task(void *arg)
         LVGL_LOCK();
         time_till_next_ms = lv_timer_handler();
 
+        uint32_t now = lv_tick_get();
+
+        if (!gps_timeout && (now - last_gps_tick > GPS_COM_TIMEOUT_MS))
+        {
+            gps_timeout = true;
+            ESP_LOGW(TAG, "GPS timeout >%ds", GPS_COM_TIMEOUT_MS / 1000);
+
+            // ===== UI REACT =====
+            lv_label_set_text(objects.sat_num, "NO GPS");
+
+            // reset signal icon
+            last_signal = SIG_NOSIGNAL;
+            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+
+            // reset speed
+            lv_label_set_text(objects.speed_after_adjust, "");
+
+            // hide speed unit label
+            if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
+            {
+                lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
+            }
+            // hide sat number label
+            if (!lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
+            {
+                lv_obj_add_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+
+        // Time screen
+        gps_rtc_get_local_time(&current_time);
+        if (current_time.valid != last_time.valid)
+        {
+            if (!current_time.valid)
+            {
+                lv_label_set_text(objects.hour_minute, "--:--");
+                lv_label_set_text(objects.second, "--");
+                lv_label_set_text(objects.date, "Waiting GPS");
+            }
+        }
+
+        if ((current_time.valid) && (!time_equal(&current_time, &last_time)))
+        {
+            // ESP_LOGI(TAG, "Time advanced!");
+            lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d", current_time.hour, current_time.minute);
+            lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
+            lv_label_set_text_fmt(objects.date, "%02d/%02d/%04d", current_time.day, current_time.month, current_time.year);
+        }
+
+        last_time = current_time;
         // ===== PHẦN 2: XỬ LÝ SỰ KIỆN UI TRONG KHI VẪN GIỮ MUTEX =====
         // Kiểm tra notification từ GPS task với timeout = 0 (không chờ)
         if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE)
         {
-
             if (events & EVT_GPS_UPDATE)
             {
-                gps_read_latest(&d);
+                last_gps_tick = lv_tick_get();
 
-                if (d.seq != last_seq)
+                if (gps_timeout)
                 {
-                    last_seq = d.seq;
-                    // TODO: Cập nhật UI với dữ liệu mới
-                    // ui_update_gps_data(&d);
+                    gps_timeout = false;
+                    ESP_LOGI(TAG, "GPS signal restored");
+                    // show speed unit label
+                    if (lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
+                    {
+                        lv_obj_clear_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
+                    }
+                    // show sat num label
+                    if (lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
+                    {
+                        lv_obj_clear_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
+                gps_read_latest(&d);
+                if (d.seq != last_data.seq)
+                {
+                    // Case 1: Alway render
+                    // Signal bar
+                    bool valid_changed = d.valid != last_data.valid;
+                    if (valid_changed)
+                    {
+                        if (!d.valid)
+                        {
+                            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                        }
+                    }
+                    signal_level_t new_signal = hdop_to_level(d.hdop);
+
+                    if (new_signal != last_signal)
+                    {
+                        last_signal = new_signal;
+                        lv_image_set_src(objects.signal_streng, signal_img_table[new_signal]);
+                    }
+
+                    int speed_kmh = (int)(d.speed_kmh + 0.5f);
+
+                    if (speed_kmh < 1)
+                    {
+                        speed_kmh = 0;
+                    }
+                    else
+                    {
+                        speed_kmh += speed_compensation;
+                    }
+
+                    if (!d.valid)
+                    {
+                        lv_label_set_text(objects.speed_after_adjust, "");
+                        lv_label_set_text(objects.sat_num, "NOT FIXED!");
+                    }
+                    else
+                    {
+                        lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
+                        lv_label_set_text_fmt(objects.sat_num, "SAT:%d", d.satellites);
+                    }
+                    // GPS+Renderspin
+                    spinGps = (spinGps + 1) & 3;
+                    lv_label_set_text_fmt(objects.gps_render_loading_indicator, "%c", "/-\\|"[spinGps]);
+
+                    // Last action
+                    last_data = d;
                 }
                 else
                 {
@@ -404,7 +588,7 @@ static void ui_lvgl_task(void *arg)
             if (events & EVT_RTC_SYNC)
             {
                 // TODO: Hiển thị icon RTC đã đồng bộ
-                // ui_show_rtc_synced();
+                ui_show_image_2s(objects.rtc_sync_icon);
             }
         }
         LVGL_UNLOCK();
@@ -422,7 +606,7 @@ static void ui_lvgl_task(void *arg)
     }
 }
 
-#ifdef DEBUG_TASK
+#if DEBUG_TASK
 static void debug_task(void *arg)
 {
     ESP_LOGI(TAG, "Start debug task");
@@ -589,6 +773,7 @@ void app_main(void)
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     lvgl_port_update_callback(display);
     ui_init();
+    lv_scr_load(objects.src_time);
     LVGL_UNLOCK();
 
     // RTC & UART
@@ -601,7 +786,7 @@ void app_main(void)
                             LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 1);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 1);
-#ifdef DEBUG_TASK
+#if DEBUG_TASK
     xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
 #endif
 }

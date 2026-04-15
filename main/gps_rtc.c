@@ -183,7 +183,7 @@ void gps_rtc_get_local_time(local_time_t *out)
     out->hour = (uint8_t)(local_tm.tm_hour);
     out->minute = (uint8_t)(local_tm.tm_min);
     out->second = (uint8_t)(local_tm.tm_sec);
-    out->millisecond = (uint16_t)(tv.tv_usec / 1000L);
+    // out->millisecond = (uint16_t)(tv.tv_usec / 1000L);
     out->valid = true;
 }
 

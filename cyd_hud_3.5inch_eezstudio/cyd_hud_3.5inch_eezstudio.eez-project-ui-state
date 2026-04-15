@@ -1,6 +1,8 @@
 {
   "navigation": {
     "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1",
+    "selectedGlyphObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1/glyphs/0",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -21,6 +23,7 @@
           },
           {
             "type": "border",
+            "selected": 1,
             "size": 240,
             "location": "right",
             "children": [
@@ -193,7 +196,7 @@
                 {
                   "type": "tab",
                   "id": "#9c4ac5fe-e3f4-4b7f-bed3-504f3e5ffe9f",
-                  "name": "Main",
+                  "name": "src_main",
                   "component": "editor",
                   "config": {
                     "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
@@ -613,7 +616,8 @@
                       "component": "bitmaps",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -667,7 +671,8 @@
                   "component": "glyphs",
                   "enableClose": false
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "tabset",
@@ -1055,15 +1060,81 @@
         "0": {
           "0": {
             "$selected": true
-          }
+          },
+          "3": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -400,
-          "y": -240
+          "x": -483,
+          "y": -318
         },
-        "scale": 1
+        "scale": 2
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/1[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {
+        "0": {
+          "0": {},
+          "2": {}
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": -479,
+          "y": -321
+        },
+        "scale": 2
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {
+        "0": {
+          "2": {},
+          "3": {}
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": -480,
+          "y": -320
+        },
+        "scale": 2
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/3[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {
+        "0": {
+          "0": {}
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": -413.5,
+          "y": -333
+        },
+        "scale": 2
       },
       "timeline": {
         "isEditorActive": false,
@@ -1086,9 +1157,12 @@
   "selectedStylePropertyName": "",
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
-  "lvglExpandedPropertiesGroup": [],
+  "lvglExpandedPropertiesGroup": [
+    "BACKGROUND"
+  ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1,
-  "implementationLanguage": "C"
+  "flowZoom": 2,
+  "implementationLanguage": "C",
+  "openDialogDefaultPath": "C:\\Users\\chacu\\CYD_3.5inch_HUD_NMEA\\cyd_hud_3.5inch_eezstudio\\assets\\JetBrainsMono-Bold.ttf"
 }
