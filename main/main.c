@@ -278,35 +278,6 @@ static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
 }
 
-static void gesture_event_cb(lv_event_t *e)
-{
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-
-    switch (dir)
-    {
-    case LV_DIR_LEFT:
-        ESP_LOGI("UI", "Swipe LEFT");
-        // next screen
-        break;
-
-    case LV_DIR_RIGHT:
-        ESP_LOGI("UI", "Swipe RIGHT");
-        // previous screen
-        break;
-
-    case LV_DIR_TOP:
-        ESP_LOGI("UI", "Swipe UP");
-        break;
-
-    case LV_DIR_BOTTOM:
-        ESP_LOGI("UI", "Swipe DOWN");
-        break;
-
-    default:
-        break;
-    }
-}
-
 /* ========================================================================== */
 /*                              TASKS                                          */
 /* ========================================================================== */
@@ -454,7 +425,7 @@ static void ui_lvgl_task(void *arg)
 #ifdef DEBUG_TASK
 static void debug_task(void *arg)
 {
-    ESP_LOGI("DEBUG", "Start debug task");
+    ESP_LOGI(TAG, "Start debug task");
     uint32_t events;
     gps_data_t d;
     uint32_t last_seq = 0;
@@ -473,7 +444,7 @@ static void debug_task(void *arg)
         }
         if (events & EVT_RTC_SYNC)
         {
-            ESP_LOGI("DEBUG", "RTC synced");
+            ESP_LOGI(TAG, "RTC synced");
         }
     }
 }
@@ -614,8 +585,6 @@ void app_main(void)
     lv_indev_set_display(indev, display);
     lv_indev_set_user_data(indev, tp);
     lv_indev_set_read_cb(indev, lvgl_touch_cb);
-    lv_obj_add_event_cb(lv_scr_act(), gesture_event_cb, LV_EVENT_GESTURE, NULL);
-
     LVGL_LOCK();
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     lvgl_port_update_callback(display);

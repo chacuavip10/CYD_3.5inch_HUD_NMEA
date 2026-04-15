@@ -7,9 +7,6 @@
 extern "C" {
 #endif
 
-extern void action_s(lv_event_t * e);
-extern void action_lvgl_change_img_src(lv_event_t * e);
-
 #ifdef __cplusplus
 }
 #endif
