@@ -176,6 +176,29 @@ bool time_equal(local_time_t *a, local_time_t *b)
            (a->second == b->second) &&
            (a->valid == b->valid);
 }
+
+static void format_lat(double lat, char *buf, size_t len)
+{
+    char hemi = (lat >= 0) ? 'N' : 'S';
+    lat = fabs(lat);
+
+    int deg = (int)lat;
+    double min = (lat - deg) * 60.0;
+
+    snprintf(buf, len, "LAT : %02d°%06.3f'%c", deg, min, hemi);
+}
+
+static void format_lon(double lon, char *buf, size_t len)
+{
+    char hemi = (lon >= 0) ? 'E' : 'W';
+    lon = fabs(lon);
+
+    int deg = (int)lon;
+    double min = (lon - deg) * 60.0;
+
+    snprintf(buf, len, "LONG: %03d°%06.3f'%c", deg, min, hemi);
+}
+
 #if DEBUG_TASK
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Hiển thị dữ liệu GPS – thời gian lấy từ RTC local                         */
@@ -250,25 +273,28 @@ static void print_gps_data(const gps_data_t *gps)
 /* ========================================================================== */
 
 static uint8_t speed_compensation = 0;
+static int current_screen = SCREEN_ID_SRC_MAIN;
 
 static lv_timer_t *img_timer = NULL;
 static void hide_image_cb(lv_timer_t *t)
 {
     lv_obj_t *img = (lv_obj_t *)lv_timer_get_user_data(t);
+    if (!lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN); // ẩn image
 
-    lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN); // ẩn image
-
-    lv_timer_del(t); // one-shot
+    lv_timer_pause(t);
 }
 
 void ui_show_image_2s(lv_obj_t *img)
 {
-    lv_obj_clear_flag(img, LV_OBJ_FLAG_HIDDEN);
+    if (lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_clear_flag(img, LV_OBJ_FLAG_HIDDEN);
 
     if (img_timer)
     {
         lv_timer_set_user_data(img_timer, img);
         lv_timer_reset(img_timer);
+        lv_timer_resume(img_timer);
     }
     else
     {
@@ -288,7 +314,31 @@ static void btn_inc_cb(lv_event_t *e)
     }
     ESP_LOGI(TAG, "Button +");
     lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
-    lv_label_set_text_fmt(objects.spd_adj_setting, "+%d", speed_compensation);
+    lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
+}
+
+static void btn_next_screen_cb(lv_event_t *e)
+{
+    current_screen++;
+
+    if (current_screen > _SCREEN_ID_LAST)
+    {
+        current_screen = _SCREEN_ID_FIRST;
+    }
+
+    loadScreen(current_screen);
+}
+
+static void btn_prev_screen_cb(lv_event_t *e)
+{
+    current_screen--;
+
+    if (current_screen < _SCREEN_ID_FIRST)
+    {
+        current_screen = _SCREEN_ID_LAST;
+    }
+
+    loadScreen(current_screen);
 }
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
@@ -467,9 +517,17 @@ static void ui_lvgl_task(void *arg)
     local_time_t current_time = {};
     local_time_t last_time = {};
     last_time.valid = true;
+    char lat_buf[32];
+    char lon_buf[32];
 
     // add callback cho button
     lv_obj_add_event_cb(objects.btn_inc, btn_inc_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(objects.main_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(objects.main_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(objects.time_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(objects.time_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(objects.info_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(objects.info_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Add button callback");
 
     while (1)
@@ -479,12 +537,6 @@ static void ui_lvgl_task(void *arg)
         time_till_next_ms = lv_timer_handler();
 
         uint32_t now = lv_tick_get();
-
-        // if (speed_compensation != last_speed_compensation)
-        // {
-        //     lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
-        //     lv_label_set_text_fmt(objects.spd_adj_setting, "+%d", speed_compensation);
-        // }
 
         // last_speed_compensation = speed_compensation;
         if (!gps_timeout && (now - last_gps_tick > GPS_COM_TIMEOUT_MS))
@@ -506,11 +558,6 @@ static void ui_lvgl_task(void *arg)
             if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
             {
                 lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
-            }
-            // hide sat number label
-            if (!lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
-            {
-                lv_obj_add_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
             }
 
             // info scr
@@ -617,8 +664,10 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
                         lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
-                        // lv_label_set_text(objects.lat_info, d.latitude);
-                        // lv_label_set_text(objects.long_info, ");
+                        format_lat(d.latitude, lat_buf, sizeof(lat_buf));
+                        format_lon(d.longitude, lon_buf, sizeof(lon_buf));
+                        lv_label_set_text(objects.lat_info, lat_buf);
+                        lv_label_set_text(objects.long_info, lon_buf);
                     }
                     // GPS+Renderspin
                     spinGps = (spinGps + 1) & 3;
@@ -627,17 +676,13 @@ static void ui_lvgl_task(void *arg)
                     // Last action
                     last_data = d;
                 }
-                else
-                {
-                    // TODO: Chỉ cập nhật thời gian
-                    // ui_update_time_only();
-                }
             }
 
             if (events & EVT_RTC_SYNC)
             {
                 // TODO: Hiển thị icon RTC đã đồng bộ
                 ui_show_image_2s(objects.rtc_sync_icon);
+                ESP_LOGI(TAG, "RTC event!");
             }
         }
         LVGL_UNLOCK();
@@ -822,7 +867,6 @@ void app_main(void)
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     lvgl_port_update_callback(display);
     ui_init();
-    lv_scr_load(objects.src_setting);
     LVGL_UNLOCK();
 
     // RTC & UART
@@ -833,8 +877,8 @@ void app_main(void)
     // LVGL task
     xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL,
                             LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
-    xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 1);
-    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 1);
+    xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
+    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
     xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
 #endif
