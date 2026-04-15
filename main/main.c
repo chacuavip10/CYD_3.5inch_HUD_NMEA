@@ -657,6 +657,7 @@ static void ui_lvgl_task(void *arg)
                     {
                         lv_label_set_text(objects.speed_after_adjust, "");
                         lv_label_set_text(objects.sat_num, "NOT FIXED!");
+                        lv_label_set_text(objects.fix_info, "FIX : NO");
                     }
                     else
                     {

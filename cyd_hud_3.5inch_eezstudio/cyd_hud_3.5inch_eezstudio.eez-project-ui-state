@@ -1,8 +1,7 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1",
-    "selectedGlyphObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1/glyphs/0",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/0",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -195,11 +194,11 @@
               "children": [
                 {
                   "type": "tab",
-                  "id": "#9c4ac5fe-e3f4-4b7f-bed3-504f3e5ffe9f",
-                  "name": "src_main",
+                  "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
+                  "name": "src_info",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1061,7 +1060,12 @@
           "0": {
             "$selected": true
           },
-          "3": {}
+          "1": {
+            "$selected": true
+          },
+          "2": {},
+          "3": {},
+          "7": {}
         }
       },
       "transform": {
@@ -1082,8 +1086,14 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {},
-          "2": {}
+          "0": {
+            "$selected": true
+          },
+          "1": {
+            "$selected": true
+          },
+          "2": {},
+          "4": {}
         }
       },
       "transform": {
@@ -1104,8 +1114,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "2": {},
-          "3": {}
+          "2": {
+            "$selected": true
+          },
+          "3": {},
+          "4": {}
         }
       },
       "transform": {
@@ -1158,7 +1171,8 @@
   "lvglPart": "MAIN",
   "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
-    "BACKGROUND"
+    "BACKGROUND",
+    "TEXT"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,

@@ -41,7 +41,7 @@ extern "C"
  * Chu kỳ đồng bộ RTC từ GPS sau lần đầu tiên (giây).
  * Mặc định 10 phút = 600 giây.
  */
-#define GPS_RTC_SYNC_INTERVAL_S (15)
+#define GPS_RTC_SYNC_INTERVAL_S (10 * 60)
 
     /* ─────────────────────────────────────────────────────────────────────────── */
     /*  Struct thời gian địa phương – dùng để hiển thị                             */
