@@ -99,7 +99,7 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define PIN_NUM_TOUCH_INT GPIO_NUM_36
 
 // Display
-#define LCD_HOR_RES 480
+#define LCD_HOR_RES 320
 #define LCD_VER_RES 480
 #define LCD_CMD_BITS 8
 #define LCD_PARAM_BITS 8
@@ -248,6 +248,9 @@ static void print_gps_data(const gps_data_t *gps)
 /* ========================================================================== */
 /*                              LVGL CALLBACKS                                 */
 /* ========================================================================== */
+
+static uint8_t speed_compensation = 0;
+
 static lv_timer_t *img_timer = NULL;
 static void hide_image_cb(lv_timer_t *t)
 {
@@ -271,6 +274,21 @@ void ui_show_image_2s(lv_obj_t *img)
     {
         img_timer = lv_timer_create(hide_image_cb, 2000, img);
     }
+}
+
+static void btn_inc_cb(lv_event_t *e)
+{
+    if (speed_compensation > 4)
+    {
+        speed_compensation = 0;
+    }
+    else
+    {
+        speed_compensation++;
+    }
+    ESP_LOGI(TAG, "Button +");
+    lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
+    lv_label_set_text_fmt(objects.spd_adj_setting, "+%d", speed_compensation);
 }
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
@@ -338,7 +356,7 @@ static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
         data->point.x = touchpad_x[0];
         data->point.y = touchpad_y[0];
         data->state = LV_INDEV_STATE_PRESSED;
-        ESP_LOGI("TOUCH", "x=%d y=%d state=%d", data->point.x, data->point.y, data->state);
+        // ESP_LOGI("TOUCH", "x=%d y=%d state=%d", data->point.x, data->point.y, data->state);
     }
     else
     {
@@ -442,13 +460,17 @@ static void ui_lvgl_task(void *arg)
     gps_data_t last_data = {};
     uint8_t spinGps = 0, spinUi = 0;
     bool needDraw = true;
-    uint8_t speed_compensation = 0;
+    // int last_speed_compensation = 1000;
     signal_level_t last_signal = 0xFF; // invalid initial
     uint32_t last_gps_tick = 0;
     bool gps_timeout = false; // start assume no signal
     local_time_t current_time = {};
     local_time_t last_time = {};
     last_time.valid = true;
+
+    // add callback cho button
+    lv_obj_add_event_cb(objects.btn_inc, btn_inc_cb, LV_EVENT_RELEASED, NULL);
+    ESP_LOGI(TAG, "Add button callback");
 
     while (1)
     {
@@ -458,6 +480,13 @@ static void ui_lvgl_task(void *arg)
 
         uint32_t now = lv_tick_get();
 
+        // if (speed_compensation != last_speed_compensation)
+        // {
+        //     lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
+        //     lv_label_set_text_fmt(objects.spd_adj_setting, "+%d", speed_compensation);
+        // }
+
+        // last_speed_compensation = speed_compensation;
         if (!gps_timeout && (now - last_gps_tick > GPS_COM_TIMEOUT_MS))
         {
             gps_timeout = true;
@@ -483,6 +512,13 @@ static void ui_lvgl_task(void *arg)
             {
                 lv_obj_add_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
             }
+
+            // info scr
+            lv_label_set_text(objects.fix_info, "NO GPS");
+            lv_label_set_text(objects.sat_info, "SAT : ");
+            lv_label_set_text(objects.hdop_info, "HDOP: ");
+            lv_label_set_text(objects.lat_info, "LAT : ");
+            lv_label_set_text(objects.long_info, "LONG: ");
         }
 
         // Time screen
@@ -533,13 +569,22 @@ static void ui_lvgl_task(void *arg)
                 if (d.seq != last_data.seq)
                 {
                     // Case 1: Alway render
-                    // Signal bar
                     bool valid_changed = d.valid != last_data.valid;
                     if (valid_changed)
                     {
                         if (!d.valid)
                         {
+                            // Signal bar
                             lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                            lv_label_set_text(objects.fix_info, "FIX : NO");
+                            lv_label_set_text(objects.hdop_info, "HDOP: ");
+                            lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
+                            lv_label_set_text(objects.lat_info, "LAT :");
+                            lv_label_set_text(objects.long_info, "LONG:");
+                        }
+                        else
+                        {
+                            lv_label_set_text(objects.fix_info, "FIX : YES");
                         }
                     }
                     signal_level_t new_signal = hdop_to_level(d.hdop);
@@ -569,7 +614,11 @@ static void ui_lvgl_task(void *arg)
                     else
                     {
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
-                        lv_label_set_text_fmt(objects.sat_num, "SAT:%d", d.satellites);
+                        lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
+                        lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
+                        lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
+                        // lv_label_set_text(objects.lat_info, d.latitude);
+                        // lv_label_set_text(objects.long_info, ");
                     }
                     // GPS+Renderspin
                     spinGps = (spinGps + 1) & 3;
@@ -773,7 +822,7 @@ void app_main(void)
     lv_display_set_rotation(display, LV_DISPLAY_ROTATION_90);
     lvgl_port_update_callback(display);
     ui_init();
-    lv_scr_load(objects.src_time);
+    lv_scr_load(objects.src_setting);
     LVGL_UNLOCK();
 
     // RTC & UART

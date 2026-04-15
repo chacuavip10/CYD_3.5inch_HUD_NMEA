@@ -34,6 +34,7 @@ typedef struct _objects_t {
     lv_obj_t *second;
     lv_obj_t *rtc_sync_icon;
     lv_obj_t *spd_adj_setting;
+    lv_obj_t *btn_inc;
     lv_obj_t *fix_info;
     lv_obj_t *hdop_info;
     lv_obj_t *sat_info;
