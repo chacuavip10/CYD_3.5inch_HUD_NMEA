@@ -223,8 +223,8 @@ static void print_gps_data(const gps_data_t *gps)
     /* ── Thời gian từ RTC local (GMT+7) ─────────────────────────────── */
     if (lt.valid)
     {
-        ESP_LOGI("DEBUG", "Time (GMT+7): %02d:%02d:%02d.%03d",
-                 lt.hour, lt.minute, lt.second, lt.millisecond);
+        ESP_LOGI("DEBUG", "Time (GMT+7): %02d:%02d:%02d",
+                 lt.hour, lt.minute, lt.second);
         ESP_LOGI("DEBUG", "Date (GMT+7): %02d/%02d/%04d",
                  lt.day, lt.month, lt.year);
     }
@@ -446,6 +446,7 @@ static void gps_task(void *arg)
                 xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
                 xTaskNotify(ui_lvgl_task_handle, EVT_GPS_UPDATE, eSetBits);
 #if DEBUG_TASK
+                ESP_LOGI("DEBUG", "Event Sent from [GPS_TASK]");
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
 #endif
                 last_seq = parser.data.seq;
@@ -478,6 +479,7 @@ static void rtc_sync_task(void *arg)
             gps_rtc_sync(&d);
             xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC, eSetBits);
 #if DEBUG_TASK
+            ESP_LOGI("DEBUG", "Event Sent from [RTC_SYNC_TASK]");
             xTaskNotify(dbg_task_handle, EVT_RTC_SYNC, eSetBits);
 #endif
         }
@@ -673,6 +675,7 @@ static void ui_lvgl_task(void *arg)
                     // GPS+Renderspin
                     spinGps = (spinGps + 1) & 3;
                     lv_label_set_text_fmt(objects.gps_render_loading_indicator, "%c", "/-\\|"[spinGps]);
+                    // ESP_LOGI(TAG, "GPS spin update: %c", "/-\\|"[spinGps]);
 
                     // Last action
                     last_data = d;
