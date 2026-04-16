@@ -510,9 +510,7 @@ static void ui_lvgl_task(void *arg)
     uint32_t time_till_next_ms;
     gps_data_t d;
     gps_data_t last_data = {};
-    uint8_t spinGps = 0, spinUi = 0;
-    bool needDraw = true;
-    // int last_speed_compensation = 1000;
+    uint8_t spinGps = 0;
     signal_level_t last_signal = 0xFF; // invalid initial
     uint32_t last_gps_tick = 0;
     bool gps_timeout = false; // start assume no signal
@@ -521,6 +519,19 @@ static void ui_lvgl_task(void *arg)
     last_time.valid = true;
     char lat_buf[32];
     char lon_buf[32];
+    static const char *frames[] = {
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏",
+    };
+    static const int frames_len = sizeof(frames) / sizeof(frames[0]);
 
     // add callback cho button
     lv_obj_add_event_cb(objects.btn_inc, btn_inc_cb, LV_EVENT_RELEASED, NULL);
@@ -673,8 +684,8 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text(objects.long_info, lon_buf);
                     }
                     // GPS+Renderspin
-                    spinGps = (spinGps + 1) & 3;
-                    lv_label_set_text_fmt(objects.gps_render_loading_indicator, "%c", "/-\\|"[spinGps]);
+                    spinGps = (spinGps + 1) % frames_len;
+                    lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
                     // ESP_LOGI(TAG, "GPS spin update: %c", "/-\\|"[spinGps]);
 
                     // Last action
@@ -880,10 +891,10 @@ void app_main(void)
     // Create tasks
     // LVGL task
     xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL,
-                            LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
+                            LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 0);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
-    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
+    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 0);
 #endif
 }

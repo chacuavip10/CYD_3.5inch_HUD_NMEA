@@ -9,6 +9,7 @@ extern "C" {
 
 extern const lv_font_t ui_font_jb30;
 extern const lv_font_t ui_font_jb150;
+extern const lv_font_t ui_font_braille30;
 
 #ifndef EXT_FONT_DESC_T
 #define EXT_FONT_DESC_T

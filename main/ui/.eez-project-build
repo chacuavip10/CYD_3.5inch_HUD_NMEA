@@ -11,6 +11,7 @@
     "styles.h",
     "ui.c",
     "ui.h",
+    "ui_font_braille30.c",
     "ui_font_jb150.c",
     "ui_font_jb30.c",
     "ui_image_no_signal_48px.c",

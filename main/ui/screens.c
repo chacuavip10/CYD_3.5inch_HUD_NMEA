@@ -72,7 +72,7 @@ void create_screen_src_main() {
             objects.gps_render_loading_indicator = obj;
             lv_obj_set_pos(obj, 30, 19);
             lv_obj_set_size(obj, 138, 32);
-            lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_braille30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "\\/");
         }
         {
@@ -291,6 +291,7 @@ void tick_screen_by_id(enum ScreensEnum screenId) {
 ext_font_desc_t fonts[] = {
     { "jb30", &ui_font_jb30 },
     { "jb150", &ui_font_jb150 },
+    { "Braille30", &ui_font_braille30 },
 #if LV_FONT_MONTSERRAT_8
     { "MONTSERRAT_8", &lv_font_montserrat_8 },
 #endif
