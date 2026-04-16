@@ -73,7 +73,7 @@ void create_screen_src_main() {
             lv_obj_set_pos(obj, 30, 19);
             lv_obj_set_size(obj, 138, 32);
             lv_obj_set_style_text_font(obj, &ui_font_braille30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "\\/");
+            lv_label_set_text_static(obj, "⠏");
         }
         {
             // sat_num
@@ -260,6 +260,16 @@ void create_screen_src_info() {
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "LONG:");
+        }
+        {
+            // gps_render_loading_indicator_1
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.gps_render_loading_indicator_1 = obj;
+            lv_obj_set_pos(obj, 311, 23);
+            lv_obj_set_size(obj, 138, 32);
+            lv_obj_set_style_text_font(obj, &ui_font_braille30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "⠏");
         }
     }
     

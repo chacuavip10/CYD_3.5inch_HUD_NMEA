@@ -609,6 +609,7 @@ static void ui_lvgl_task(void *arg)
             if (events & EVT_GPS_UPDATE)
             {
                 last_gps_tick = lv_tick_get();
+                spinGps = (spinGps + 1) % frames_len;
 
                 if (gps_timeout)
                 {
@@ -637,10 +638,6 @@ static void ui_lvgl_task(void *arg)
                             // Signal bar
                             lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
                             lv_label_set_text(objects.fix_info, "FIX : NO");
-                            lv_label_set_text(objects.hdop_info, "HDOP: ");
-                            lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
-                            lv_label_set_text(objects.lat_info, "LAT :");
-                            lv_label_set_text(objects.long_info, "LONG:");
                         }
                         else
                         {
@@ -671,6 +668,10 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text(objects.speed_after_adjust, "");
                         lv_label_set_text(objects.sat_num, "NOT FIXED!");
                         lv_label_set_text(objects.fix_info, "FIX : NO");
+                        lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
+                        lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
+                        lv_label_set_text(objects.lat_info, "LAT :");
+                        lv_label_set_text(objects.long_info, "LONG:");
                     }
                     else
                     {
@@ -684,8 +685,9 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text(objects.long_info, lon_buf);
                     }
                     // GPS+Renderspin
-                    spinGps = (spinGps + 1) % frames_len;
                     lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
+                    lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
+
                     // ESP_LOGI(TAG, "GPS spin update: %c", "/-\\|"[spinGps]);
 
                     // Last action

@@ -381,7 +381,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "\\/",
+              "text": "⠏",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1351,6 +1351,57 @@
               "group": "",
               "groupIndex": 0,
               "text": "LONG:",
+              "textType": "literal",
+              "longMode": "WRAP",
+              "recolor": false
+            },
+            {
+              "objID": "0ac9526d-6d2d-4778-f139-803247b65e83",
+              "type": "LVGLLabelWidget",
+              "left": 311,
+              "top": 23,
+              "width": 138,
+              "height": 32,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "05f6f7c0-af11-4702-d862-6b684cb08a0e",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "gps_render_loading_indicator_1",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "px",
+              "heightUnit": "px",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "5797e86e-e491-4c0f-e8d8-4122b60ad0a4",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "Braille30",
+                      "text_align": "RIGHT"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "⠏",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false

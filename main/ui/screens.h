@@ -43,6 +43,7 @@ typedef struct _objects_t {
     lv_obj_t *sat_info;
     lv_obj_t *lat_info;
     lv_obj_t *long_info;
+    lv_obj_t *gps_render_loading_indicator_1;
 } objects_t;
 
 extern objects_t objects;
