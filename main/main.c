@@ -884,26 +884,11 @@ static void ui_lvgl_task(void *arg)
                 {
                     /* -- Fix validity change: update FIX label & signal icon -- */
                     bool valid_changed = (d.valid != last_data.valid);
-                    if (valid_changed)
-                    {
-                        if (!d.valid)
-                        {
-                            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
-                            lv_label_set_text(objects.fix_info, "FIX : NO");
-                        }
-                        else
-                        {
-                            lv_label_set_text(objects.fix_info, "FIX : YES");
-                        }
-                    }
+                    if ((valid_changed) && (!d.valid))
+                        lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
 
                     /* -- Signal strength icon (only redrawn when level changes) -- */
                     signal_level_t new_signal = hdop_to_level(d.hdop);
-                    if (new_signal != last_signal)
-                    {
-                        last_signal = new_signal;
-                        lv_image_set_src(objects.signal_streng, signal_img_table[new_signal]);
-                    }
 
                     /* -- Speed: round half-up, apply compensation, floor at 0 -- */
                     int speed_kmh = (int)(d.speed_kmh + 0.5f);
@@ -916,6 +901,7 @@ static void ui_lvgl_task(void *arg)
                     if (!d.valid)
                     {
                         lv_label_set_text(objects.speed_after_adjust, "");
+                        lv_label_set_text(objects.fix_info, "FIX : NO");
                         lv_label_set_text(objects.sat_num, "NOT FIXED!");
                         lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f (LAST)", d.hdop);
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
@@ -924,8 +910,14 @@ static void ui_lvgl_task(void *arg)
                     }
                     else
                     {
+                        if (new_signal != last_signal)
+                        {
+                            last_signal = new_signal;
+                            lv_image_set_src(objects.signal_streng, signal_img_table[new_signal]);
+                        }
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
+                        lv_label_set_text(objects.fix_info, "FIX : YES");
                         lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
                         format_lat(d.latitude, lat_buf, sizeof(lat_buf));

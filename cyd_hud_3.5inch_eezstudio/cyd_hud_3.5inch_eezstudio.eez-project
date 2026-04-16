@@ -144,9 +144,9 @@
               "objID": "c103343b-a454-45de-c6e0-ee64d1954f4c",
               "type": "LVGLButtonWidget",
               "left": 1,
-              "top": 111,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 226,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -155,6 +155,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "main_prev_scr",
@@ -191,9 +192,9 @@
               "objID": "30a577db-68b7-46fd-db2e-3639b2b0511b",
               "type": "LVGLButtonWidget",
               "left": 379,
-              "top": 111,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 226,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -202,6 +203,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "main_next_scr",
@@ -249,6 +251,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "speed_after_adjust",
@@ -301,6 +304,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "speed_unit",
@@ -351,6 +355,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "gps_render_loading_indicator",
@@ -401,6 +406,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "sat_num",
@@ -452,6 +458,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "signal_streng",
@@ -491,9 +498,9 @@
               "objID": "fa7337a0-c5c7-4793-e50e-4f0f203e57f0",
               "type": "LVGLButtonWidget",
               "left": 1,
-              "top": 265,
-              "width": 100,
-              "height": 55,
+              "top": 236,
+              "width": 167,
+              "height": 84,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -502,6 +509,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "btn_inc",
@@ -513,10 +521,10 @@
                 {
                   "objID": "47ab5b8f-4b16-45f8-d76f-e56f21baf590",
                   "type": "LVGLLabelWidget",
-                  "left": 0,
-                  "top": -5,
+                  "left": -36,
+                  "top": 8,
                   "width": 36,
-                  "height": 32,
+                  "height": 34,
                   "customInputs": [],
                   "customOutputs": [],
                   "style": {
@@ -525,13 +533,14 @@
                     "conditionalStyles": [],
                     "childStyles": []
                   },
+                  "locked": true,
                   "timeline": [],
                   "eventHandlers": [],
                   "identifier": "speed_adjust_main",
                   "leftUnit": "px",
                   "topUnit": "px",
-                  "widthUnit": "content",
-                  "heightUnit": "content",
+                  "widthUnit": "px",
+                  "heightUnit": "px",
                   "children": [],
                   "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
                   "hiddenFlagType": "literal",
@@ -648,9 +657,9 @@
               "objID": "e87c949b-a250-4cdb-f600-e2b434ba207f",
               "type": "LVGLButtonWidget",
               "left": 1,
-              "top": 111,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 226,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -659,6 +668,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "time_prev_scr",
@@ -695,9 +705,9 @@
               "objID": "c4a5bd7b-6280-4943-daa3-51c04a113cd5",
               "type": "LVGLButtonWidget",
               "left": 379,
-              "top": 111,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 226,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -706,6 +716,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "time_next_scr",
@@ -753,7 +764,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": false,
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "hour_minute",
@@ -805,7 +816,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": false,
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "date",
@@ -856,7 +867,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": false,
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "second",
@@ -909,7 +920,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": false,
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "rtc_sync_icon",
@@ -1008,10 +1019,10 @@
             {
               "objID": "78cea16f-c500-4763-9a44-68ff2933c963",
               "type": "LVGLButtonWidget",
-              "left": 1.5,
-              "top": 103,
+              "left": 1,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 218,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1020,6 +1031,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "info_prev_scr",
@@ -1055,10 +1067,10 @@
             {
               "objID": "39248d10-6393-463d-9f43-4b5e702a06ae",
               "type": "LVGLButtonWidget",
-              "left": 379.5,
-              "top": 103,
+              "left": 379,
+              "top": 0,
               "width": 100,
-              "height": 115,
+              "height": 218,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1067,6 +1079,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "info_next_scr",
@@ -1260,7 +1273,7 @@
               "left": 65,
               "top": 207,
               "width": 344,
-              "height": 32,
+              "height": 34,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1311,7 +1324,7 @@
               "left": 65,
               "top": 264,
               "width": 344,
-              "height": 32,
+              "height": 34,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -1371,6 +1384,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
+              "locked": true,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "gps_render_loading_indicator_1",
