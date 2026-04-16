@@ -60,7 +60,8 @@ extern "C"
         uint8_t minute; /**< Phút  [0–59]                        */
         uint8_t second; /**< Giây  [0–59]                        */
         // uint16_t millisecond; /**< Millisecond [0–999]                 */
-        bool valid; /**< false = RTC chưa được sync lần nào */
+        bool valid;            /**< false = RTC chưa được sync lần nào */
+        uint32_t last_sync_ms; /**< millis since boot at last RTC sync */
     } local_time_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
@@ -116,6 +117,15 @@ extern "C"
      * @return true = đã sync, thời gian hợp lệ.
      */
     bool gps_rtc_is_synced(void);
+
+    /**
+     * @brief Check if RTC sync is stale
+     *
+     * @param threshold_ms Threshold in milliseconds (e.g. 2h = 7200000 ms)
+     * @return true  RTC is stale or not yet synchronized
+     * @return false RTC is fresh
+     */
+    bool gps_rtc_is_stale(uint32_t threshold_ms);
 
 #ifdef __cplusplus
 }

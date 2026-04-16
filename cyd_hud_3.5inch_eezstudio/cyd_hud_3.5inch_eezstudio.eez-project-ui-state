@@ -1,7 +1,7 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/0",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/2",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -195,10 +195,10 @@
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
-                  "name": "src_info",
+                  "name": "src_main",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
                     "permanent": false
                   },
                   "icon": "svg:page"
@@ -1057,14 +1057,11 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "$selected": true
-          },
-          "1": {
-            "$selected": true
-          },
+          "0": {},
+          "1": {},
           "2": {},
           "3": {},
+          "4": {},
           "7": {}
         }
       },
@@ -1073,7 +1070,7 @@
           "x": -483,
           "y": -318
         },
-        "scale": 2
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1086,22 +1083,18 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "0": {
-            "$selected": true
-          },
-          "1": {
-            "$selected": true
-          },
+          "0": {},
+          "1": {},
           "2": {},
           "4": {}
         }
       },
       "transform": {
         "translate": {
-          "x": -479,
-          "y": -321
+          "x": -240,
+          "y": -160
         },
-        "scale": 2
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1114,9 +1107,7 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "2": {
-            "$selected": true
-          },
+          "2": {},
           "3": {},
           "4": {}
         }
@@ -1126,7 +1117,7 @@
           "x": -480,
           "y": -320
         },
-        "scale": 2
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1176,7 +1167,7 @@
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 2,
+  "flowZoom": 1,
   "implementationLanguage": "C",
-  "openDialogDefaultPath": "C:\\Users\\chacu\\CYD_3.5inch_HUD_NMEA\\cyd_hud_3.5inch_eezstudio\\assets\\JetBrainsMono-Bold.ttf"
+  "openDialogDefaultPath": "C:\\Users\\chacu\\CYD_3.5inch_HUD_NMEA\\cyd_hud_3.5inch_eezstudio\\assets\\NotoSansSymbols2-Regular.ttf"
 }

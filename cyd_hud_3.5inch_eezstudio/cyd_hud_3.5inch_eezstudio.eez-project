@@ -742,7 +742,7 @@
               "objID": "ada33a27-fe7a-4238-f324-d10ebf39478c",
               "type": "LVGLLabelWidget",
               "left": 15,
-              "top": 49,
+              "top": 55,
               "width": 450,
               "height": 133,
               "customInputs": [],
@@ -753,7 +753,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "hour_minute",
@@ -793,8 +793,8 @@
             {
               "objID": "4b948df6-3480-45f6-a823-5501ae5dc7b0",
               "type": "LVGLLabelWidget",
-              "left": 60,
-              "top": 210,
+              "left": 51,
+              "top": 226,
               "width": 286,
               "height": 32,
               "customInputs": [],
@@ -805,7 +805,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "date",
@@ -844,10 +844,10 @@
             {
               "objID": "80b7031c-7200-4bb1-d40b-3e6534cd9d66",
               "type": "LVGLLabelWidget",
-              "left": 346,
-              "top": 210,
-              "width": 36,
-              "height": 32,
+              "left": 371,
+              "top": 215,
+              "width": 83,
+              "height": 53,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -856,7 +856,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "second",
@@ -880,8 +880,9 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "text_font": "jb30",
-                      "text_color": "#A0A0A0"
+                      "text_font": "jb60",
+                      "text_color": "#A0A0A0",
+                      "text_align": "RIGHT"
                     }
                   }
                 }
@@ -908,7 +909,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "rtc_sync_icon",
@@ -1528,6 +1529,30 @@
         "encodings": [],
         "symbols": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
       }
+    },
+    {
+      "objID": "fb563f70-2f66-4a7a-f51b-1a779efc2304",
+      "name": "jb60",
+      "renderingEngine": "LVGL",
+      "source": {
+        "objID": "96350d20-4a70-44c5-db2f-f4ab4fc7a454",
+        "filePath": "assets\\JetBrainsMono-Bold.ttf",
+        "size": 60
+      },
+      "bpp": 4,
+      "threshold": 128,
+      "height": 46,
+      "ascent": 45,
+      "descent": 1,
+      "glyphs": [],
+      "lvglRanges": "",
+      "lvglSymbols": "0123456789",
+      "lvglAdditionalSources": [],
+      "lvglGlyphs": {
+        "encodings": [],
+        "symbols": "0123456789"
+      },
+      "embeddedFontFileIndex": 0
     }
   ],
   "bitmaps": [

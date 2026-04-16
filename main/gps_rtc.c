@@ -10,8 +10,10 @@
 #include <stdlib.h>   /* setenv */
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "GPS_RTC";
+static int64_t s_last_sync_boot_ms = 0;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  State nội bộ                                                                */
@@ -138,6 +140,7 @@ void gps_rtc_sync(const gps_data_t *d)
     /* Cập nhật state */
     s_rtc_synced = true;
     s_last_sync_utc = utc_epoch;
+    s_last_sync_boot_ms = esp_timer_get_time() / 1000; // µs → ms
 
     /* Log để debug */
     ESP_LOGI(TAG, "RTC synced – GPS UTC: %04d-%02d-%02d %02d:%02d:%02d",
@@ -185,9 +188,19 @@ void gps_rtc_get_local_time(local_time_t *out)
     out->second = (uint8_t)(local_tm.tm_sec);
     // out->millisecond = (uint16_t)(tv.tv_usec / 1000L);
     out->valid = true;
+    out->last_sync_ms = (uint32_t)s_last_sync_boot_ms;
 }
 
 bool gps_rtc_is_synced(void)
 {
     return s_rtc_synced;
+}
+
+bool gps_rtc_is_stale(uint32_t threshold_ms)
+{
+    if (!s_rtc_synced)
+        return true;
+
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    return (now_ms - s_last_sync_boot_ms) >= threshold_ms;
 }
