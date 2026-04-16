@@ -212,9 +212,16 @@ static void parse_gga(nmea_parser_t *p, const char *sentence)
         if (f[6] == '.')
         {
             v = 0;
-            parse_uint(f + 7, &v);
-            /* ATGM336H xuất 2 chữ số thập phân → *10 để ra milliseconds */
-            d->millisecond = (uint16_t)(v * 10u);
+            int digits = parse_uint(f + 7, &v);
+            /* ATGM336H xuất 3 chữ số thập phân → *100 để ra milliseconds */
+            if (digits == 1)
+                d->millisecond = (uint16_t)(v * 100);
+            else if (digits == 2)
+                d->millisecond = (uint16_t)(v * 10);
+            else if (digits == 3)
+                d->millisecond = (uint16_t)v;
+            else // digits > 3
+                d->millisecond = 0;
         }
         else
         {
@@ -305,8 +312,16 @@ static void parse_rmc(nmea_parser_t *p, const char *sentence)
         if (f[6] == '.')
         {
             uint32_t v = 0;
-            parse_uint(f + 7, &v);
-            d->millisecond = (uint16_t)(v * 10u);
+            int digits = parse_uint(f + 7, &v);
+            /* ATGM336H xuất 3 chữ số thập phân → *100 để ra milliseconds */
+            if (digits == 1)
+                d->millisecond = (uint16_t)(v * 100);
+            else if (digits == 2)
+                d->millisecond = (uint16_t)(v * 10);
+            else if (digits == 3)
+                d->millisecond = (uint16_t)v;
+            else // digits > 3
+                d->millisecond = 0;
         }
     }
 

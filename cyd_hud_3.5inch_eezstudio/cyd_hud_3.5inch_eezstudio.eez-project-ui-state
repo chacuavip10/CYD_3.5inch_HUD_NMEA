@@ -1,7 +1,7 @@
 {
   "navigation": {
     "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/1",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/1",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/0",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -1085,9 +1085,7 @@
         "0": {
           "0": {},
           "1": {},
-          "2": {
-            "$selected": true
-          },
+          "2": {},
           "4": {}
         }
       },
