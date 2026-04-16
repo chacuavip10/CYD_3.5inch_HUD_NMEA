@@ -447,6 +447,7 @@ static void btn_next_screen_cb(lv_event_t *e)
     if (current_screen > _SCREEN_ID_LAST)
         current_screen = _SCREEN_ID_FIRST;
     loadScreen(current_screen);
+    ESP_LOGI(TAG, "Go to next screen");
 }
 
 /**
@@ -458,6 +459,7 @@ static void btn_prev_screen_cb(lv_event_t *e)
     if (current_screen < _SCREEN_ID_FIRST)
         current_screen = _SCREEN_ID_LAST;
     loadScreen(current_screen);
+    ESP_LOGI(TAG, "Go to previous screen");
 }
 
 /**
