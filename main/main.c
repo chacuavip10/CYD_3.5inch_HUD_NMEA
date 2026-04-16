@@ -80,8 +80,9 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define GPS_RTC_STALE_THRESHOLD_MS (2 * 60 * 60 * 1000) // 2h
 
 /* --- FreeRTOS event bit flags (used with xTaskNotify) --- */
-#define EVT_GPS_UPDATE (1 << 0) // New parsed GPS frame is ready in the double buffer
-#define EVT_RTC_SYNC (1 << 1)   // RTC was just synchronized from a valid GPS fix
+#define EVT_GPS_UPDATE (1 << 0)       // New parsed GPS frame is ready in the double buffer
+#define EVT_RTC_SYNC_DONE (1 << 1)    // RTC was just synchronized from a valid GPS fix
+#define EVT_RTC_SYNC_REQUEST (1 << 2) // UI task → RTC task (yêu cầu sync ngay)
 
 /* --- Task handles (populated at startup) --- */
 static TaskHandle_t gps_task_handle;
@@ -656,25 +657,42 @@ static void rtc_sync_task(void *arg)
     ESP_LOGI(TAG, "RTC sync task started");
     gps_data_t d;
     uint32_t last_seq = 0;
+    uint32_t events;
+    bool should_sync_rtc = false;
 
     while (1)
     {
-        /* Block until gps_task signals that new data is available. */
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        gps_read_latest(&d);
-
-        if (d.seq == last_seq)
-            continue; /* Same frame we already processed – skip. */
-        last_seq = d.seq;
-
-        if (gps_rtc_should_sync(&d))
+        /* ── SECTION  : EVENT DISPATCH ───────────────────────────────────── */
+        /*
+         * BLOCKING: consume any pending notifications
+         */
+        if (xTaskNotifyWait(0, UINT32_MAX, &events, portMAX_DELAY) == pdTRUE)
         {
-            gps_rtc_sync(&d);
-            xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC, eSetBits);
+            // reset flag
+            should_sync_rtc = false;
+            // Read lastest gps update
+            gps_read_latest(&d);
+            // Check event
+            if (events & EVT_RTC_SYNC_REQUEST)
+                // Sync if got request from other task
+                should_sync_rtc = true;
+            else if (events & EVT_GPS_UPDATE)
+            {
+                // New GPS sentence, normal check
+                if (d.seq != last_seq && gps_rtc_should_sync(&d))
+                    should_sync_rtc = true;
+                last_seq = d.seq;
+            }
+
+            if (should_sync_rtc)
+            {
+                gps_rtc_sync(&d);
+                xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
 #if DEBUG_TASK
-            ESP_LOGI("DEBUG", "Event Sent from [RTC_SYNC_TASK]");
-            xTaskNotify(dbg_task_handle, EVT_RTC_SYNC, eSetBits);
+                ESP_LOGI("DEBUG", "Event Sent from [RTC_SYNC_TASK]");
+                xTaskNotify(dbg_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
 #endif
+            }
         }
     }
 }
@@ -701,7 +719,7 @@ static void rtc_sync_task(void *arg)
  *                             blank speed/position and switch to the NO GPS state.
  *   5. xTaskNotifyWait(0)   – non-blocking check for pending events:
  *        EVT_GPS_UPDATE → read new GPS frame, update speed/sat/position labels.
- *        EVT_RTC_SYNC   → flash the RTC-sync icon for 2 seconds.
+ *        EVT_RTC_SYNC_DONE   → flash the RTC-sync icon for 2 seconds.
  *   6. LVGL_UNLOCK ─────────────────────────────────────────────────────────
  *   7. vTaskDelay(clamped)  – yield for lv_timer_handler's requested interval,
  *                             clamped to [MIN=5 ms, MAX=500 ms].
@@ -862,12 +880,13 @@ static void ui_lvgl_task(void *arg)
          * while still holding the LVGL mutex so LVGL widget updates inside
          * the event handlers are automatically serialised.
          */
-        if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE)
+        if (xTaskNotifyWait(0, UINT32_MAX, &events, 0) == pdTRUE)
         {
             /* ── EVT_GPS_UPDATE ─────────────────────────────────────────── */
             if (events & EVT_GPS_UPDATE)
             {
                 last_gps_tick = lv_tick_get();
+                gps_read_latest(&d);
                 spinGps = (spinGps + 1) % frames_len;
 
                 /* Restore hidden UI elements when GPS signal recovers. */
@@ -879,15 +898,32 @@ static void ui_lvgl_task(void *arg)
                         lv_obj_clear_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
                     if (lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
                         lv_obj_clear_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
+                    // Sync rtc when gps restore and got valid fix
+                    if (d.valid)
+                    {
+                        xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                        ESP_LOGI(TAG, "Sync request sent to RTC Task");
+                    }
                 }
 
-                gps_read_latest(&d);
                 if (d.seq != last_data.seq)
                 {
                     /* -- Fix validity change: update FIX label & signal icon -- */
                     bool valid_changed = (d.valid != last_data.valid);
-                    if ((valid_changed) && (!d.valid))
+                    if (valid_changed)
+                    {
+                        // Sync rtc when gps got fix again
+                        if (d.valid)
+                        {
+                            ESP_LOGI(TAG, "GPS --> Fix");
+                            xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                            ESP_LOGI(TAG, "Sync request sent to RTC Task");
+                        }
+                        else
+                            ESP_LOGI(TAG, "GPS --> No Fix");
+                        // Change signal bar to no_sig when gps lost fix
                         lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                    }
 
                     /* -- Signal strength icon (only redrawn when level changes) -- */
                     signal_level_t new_signal = hdop_to_level(d.hdop);
@@ -936,8 +972,8 @@ static void ui_lvgl_task(void *arg)
                 }
             }
 
-            /* ── EVT_RTC_SYNC ───────────────────────────────────────────── */
-            if (events & EVT_RTC_SYNC)
+            /* ── EVT_RTC_SYNC_DONE ───────────────────────────────────────────── */
+            if (events & EVT_RTC_SYNC_DONE)
             {
                 /* Flash the RTC-sync icon for 2 seconds to acknowledge the sync. */
                 ui_show_image_2s(objects.rtc_sync_icon);
@@ -995,7 +1031,7 @@ static void debug_task(void *arg)
             last_seq = d.seq;
             print_gps_data(&d);
         }
-        if (events & EVT_RTC_SYNC)
+        if (events & EVT_RTC_SYNC_DONE)
         {
             ESP_LOGI(TAG, "RTC synced");
         }
