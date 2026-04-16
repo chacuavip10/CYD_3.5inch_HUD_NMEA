@@ -917,7 +917,7 @@ static void ui_lvgl_task(void *arg)
                     {
                         lv_label_set_text(objects.speed_after_adjust, "");
                         lv_label_set_text(objects.sat_num, "NOT FIXED!");
-                        lv_label_set_text(objects.hdop_info, "HDOP: "); // HDOP not update when no fix
+                        lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f (LAST)", d.hdop);
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
                         lv_label_set_text(objects.lat_info, "LAT :");
                         lv_label_set_text(objects.long_info, "LONG:");
