@@ -794,8 +794,8 @@
               "objID": "4b948df6-3480-45f6-a823-5501ae5dc7b0",
               "type": "LVGLLabelWidget",
               "left": 51,
-              "top": 226,
-              "width": 286,
+              "top": 247,
+              "width": 366,
               "height": 32,
               "customInputs": [],
               "customOutputs": [],
@@ -836,7 +836,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "15/04/2026",
+              "text": "Chủ nhật, 15/04/2026",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1470,7 +1470,7 @@
       "descent": 5,
       "glyphs": [],
       "lvglRanges": "32-127",
-      "lvglSymbols": "°",
+      "lvglSymbols": "°ủậứ",
       "lvglAdditionalSources": [],
       "lvglGlyphs": {
         "encodings": [

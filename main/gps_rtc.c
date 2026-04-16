@@ -14,6 +14,24 @@
 
 static const char *TAG = "GPS_RTC";
 static int64_t s_last_sync_boot_ms = 0;
+int calculate_weekday(int y, int m, int d)
+{
+    if (m < 3)
+    {
+        m += 12;
+        y--;
+    }
+
+    int K = y % 100;
+    int J = y / 100;
+
+    int h = (d + (13 * (m + 1)) / 5 + K + K / 4 + J / 4 + 5 * J) % 7;
+
+    // h: 0=Saturday ... 6=Friday
+    int w = (h + 6) % 7; // 0=Sunday ... 6=Saturday
+
+    return w;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  State nội bộ                                                                */
@@ -183,6 +201,7 @@ void gps_rtc_get_local_time(local_time_t *out)
     out->year = (uint16_t)(local_tm.tm_year + 1900);
     out->month = (uint8_t)(local_tm.tm_mon + 1);
     out->day = (uint8_t)(local_tm.tm_mday);
+    out->week_day = calculate_weekday(out->year, out->month, out->day);
     out->hour = (uint8_t)(local_tm.tm_hour);
     out->minute = (uint8_t)(local_tm.tm_min);
     out->second = (uint8_t)(local_tm.tm_sec);

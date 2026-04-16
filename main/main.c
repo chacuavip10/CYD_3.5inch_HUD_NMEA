@@ -236,15 +236,20 @@ static const void *signal_img_table[] = {
  * Used in the UI task to skip label updates when the displayed time has not
  * changed, reducing unnecessary LVGL redraws.
  */
-bool time_equal(local_time_t *a, local_time_t *b)
+bool compare_hh_mm(local_time_t *a, local_time_t *b)
 {
-    return (a->year == b->year) &&
-           (a->month == b->month) &&
-           (a->day == b->day) &&
-           (a->hour == b->hour) &&
-           (a->minute == b->minute) &&
-           (a->second == b->second) &&
-           (a->valid == b->valid);
+    return (a->hour == b->hour) &&
+           (a->minute == b->minute);
+}
+
+bool compare_ss(local_time_t *a, local_time_t *b)
+{
+    return (a->second == b->second);
+}
+
+bool compare_dd(local_time_t *a, local_time_t *b)
+{
+    return (a->day == b->day);
 }
 
 /**
@@ -712,6 +717,8 @@ static void ui_lvgl_task(void *arg)
     last_time.valid = true; /* Prevent spurious "Waiting GPS" flash on startup. */
     char lat_buf[32];
     char lon_buf[32];
+    static const char *WEEKDAY_STR[] = {
+        "Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"};
 
     /* Braille spinner frames – visible indication that the render loop is alive. */
     static const char *frames[] = {
@@ -779,7 +786,7 @@ static void ui_lvgl_task(void *arg)
          * the clock display updates every second even when no new GPS packet
          * has arrived (the RTC free-runs between GPS syncs).
          *
-         * time_equal() guards against redundant label writes.
+         * compare_hh_mm_ss() guards against redundant label writes.
          */
         gps_rtc_get_local_time(&current_time);
         bool is_stale = gps_rtc_is_stale(GPS_RTC_STALE_THRESHOLD_MS);
@@ -806,15 +813,33 @@ static void ui_lvgl_task(void *arg)
                 lv_label_set_text(objects.second, "--");
                 lv_label_set_text(objects.date, "Waiting GPS");
             }
+            else
+            { // force update toàn bộ
+                last_time.hour = -1;
+                last_time.minute = -1;
+                last_time.second = -1;
+                last_time.day = -1;
+            }
         }
-        if (current_time.valid && !time_equal(&current_time, &last_time))
+
+        if (current_time.valid)
         {
-            lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d",
-                                  current_time.hour, current_time.minute);
-            lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
-            lv_label_set_text_fmt(objects.date, "%02d/%02d/%04d",
-                                  current_time.day, current_time.month, current_time.year);
+            if (!compare_hh_mm(&current_time, &last_time))
+            {
+                lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d",
+                                      current_time.hour, current_time.minute);
+            }
+            if (!compare_ss(&current_time, &last_time))
+            {
+                lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
+            }
+            if (!compare_dd(&current_time, &last_time))
+            {
+                lv_label_set_text_fmt(objects.date, "%s, %02d/%02d/%04d", WEEKDAY_STR[current_time.week_day],
+                                      current_time.day, current_time.month, current_time.year);
+            }
         }
+
         last_time = current_time;
 
         /* ── SECTION 4: EVENT DISPATCH ───────────────────────────────────── */

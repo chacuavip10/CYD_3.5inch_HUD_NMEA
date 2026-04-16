@@ -53,12 +53,13 @@ extern "C"
      */
     typedef struct
     {
-        uint16_t year;  /**< Năm đầy đủ, vd: 2025               */
-        uint8_t month;  /**< Tháng [1–12]                        */
-        uint8_t day;    /**< Ngày  [1–31]                        */
-        uint8_t hour;   /**< Giờ   [0–23], đã cộng +7h          */
-        uint8_t minute; /**< Phút  [0–59]                        */
-        uint8_t second; /**< Giây  [0–59]                        */
+        uint16_t year;    /**< Năm đầy đủ, vd: 2025               */
+        uint8_t month;    /**< Tháng [1–12]                        */
+        uint8_t day;      /**< Ngày  [1–31]                        */
+        uint8_t week_day; /**< day of week 0=Saturday ... 6=Friday */
+        uint8_t hour;     /**< Giờ   [0–23], đã cộng +7h          */
+        uint8_t minute;   /**< Phút  [0–59]                        */
+        uint8_t second;   /**< Giây  [0–59]                        */
         // uint16_t millisecond; /**< Millisecond [0–999]                 */
         bool valid;            /**< false = RTC chưa được sync lần nào */
         uint32_t last_sync_ms; /**< millis since boot at last RTC sync */

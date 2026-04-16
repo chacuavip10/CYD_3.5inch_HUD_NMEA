@@ -160,10 +160,10 @@ void create_screen_src_time() {
             // date
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.date = obj;
-            lv_obj_set_pos(obj, 51, 226);
-            lv_obj_set_size(obj, 286, 32);
+            lv_obj_set_pos(obj, 51, 247);
+            lv_obj_set_size(obj, 366, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "15/04/2026");
+            lv_label_set_text_static(obj, "Chủ nhật, 15/04/2026");
         }
         {
             // second
