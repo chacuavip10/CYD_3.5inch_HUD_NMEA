@@ -169,9 +169,9 @@ void create_screen_src_time() {
             // second
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.second = obj;
-            lv_obj_set_pos(obj, 371, 215);
-            lv_obj_set_size(obj, 83, 53);
-            lv_obj_set_style_text_font(obj, &ui_font_jb60, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_pos(obj, 380, 188);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &ui_font_jb61, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "59");
@@ -303,7 +303,7 @@ ext_font_desc_t fonts[] = {
     { "jb30", &ui_font_jb30 },
     { "jb150", &ui_font_jb150 },
     { "Braille30", &ui_font_braille30 },
-    { "jb60", &ui_font_jb60 },
+    { "jb61", &ui_font_jb61 },
 #if LV_FONT_MONTSERRAT_8
     { "MONTSERRAT_8", &lv_font_montserrat_8 },
 #endif

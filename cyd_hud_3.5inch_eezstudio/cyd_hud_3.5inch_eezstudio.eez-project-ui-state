@@ -194,6 +194,20 @@
               "children": [
                 {
                   "type": "tab",
+                  "id": "#4372defe-b188-4a78-8151-18179a34c43b",
+                  "name": "jb60",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/3",
+                    "params": {
+                      "forceOpenEditor": true
+                    },
+                    "permanent": false
+                  },
+                  "icon": "material:font_download"
+                },
+                {
+                  "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
                   "name": "src_time",
                   "component": "editor",
@@ -1086,7 +1100,9 @@
           "0": {},
           "1": {},
           "2": {},
-          "4": {}
+          "4": {
+            "$selected": true
+          }
         }
       },
       "transform": {

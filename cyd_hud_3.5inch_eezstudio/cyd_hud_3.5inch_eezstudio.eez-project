@@ -844,10 +844,10 @@
             {
               "objID": "80b7031c-7200-4bb1-d40b-3e6534cd9d66",
               "type": "LVGLLabelWidget",
-              "left": 371,
-              "top": 215,
-              "width": 83,
-              "height": 53,
+              "left": 380,
+              "top": 188,
+              "width": 74,
+              "height": 46,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -862,8 +862,8 @@
               "identifier": "second",
               "leftUnit": "px",
               "topUnit": "px",
-              "widthUnit": "px",
-              "heightUnit": "px",
+              "widthUnit": "content",
+              "heightUnit": "content",
               "children": [],
               "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
               "hiddenFlagType": "literal",
@@ -880,7 +880,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "text_font": "jb60",
+                      "text_font": "jb61",
                       "text_color": "#A0A0A0",
                       "text_align": "RIGHT"
                     }
@@ -1531,13 +1531,13 @@
       }
     },
     {
-      "objID": "fb563f70-2f66-4a7a-f51b-1a779efc2304",
-      "name": "jb60",
+      "objID": "6032751c-0f19-439c-9bd8-8550b0a10f4f",
+      "name": "jb61",
       "renderingEngine": "LVGL",
       "source": {
-        "objID": "96350d20-4a70-44c5-db2f-f4ab4fc7a454",
+        "objID": "f080b71b-2b98-40bd-d665-bc5e95f1d8d2",
         "filePath": "assets\\JetBrainsMono-Bold.ttf",
-        "size": 60
+        "size": 61
       },
       "bpp": 4,
       "threshold": 128,
@@ -1546,11 +1546,11 @@
       "descent": 1,
       "glyphs": [],
       "lvglRanges": "",
-      "lvglSymbols": "0123456789",
+      "lvglSymbols": "1234567890-",
       "lvglAdditionalSources": [],
       "lvglGlyphs": {
         "encodings": [],
-        "symbols": "0123456789"
+        "symbols": "1234567890"
       },
       "embeddedFontFileIndex": 0
     }
