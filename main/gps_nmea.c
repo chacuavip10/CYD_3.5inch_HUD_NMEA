@@ -199,35 +199,36 @@ static void parse_gga(nmea_parser_t *p, const char *sentence)
 
     /* ── Field 1: Thời gian UTC – HHMMSS.sss ──────────────────────────── */
     f = field_ptr(sentence, 1);
-    if (f && field_len(f) >= 6)
-    {
-        uint32_t v;
-        /* HH */
-        d->hour = (uint8_t)((f[0] - '0') * 10 + (f[1] - '0'));
-        /* MM */
-        d->minute = (uint8_t)((f[2] - '0') * 10 + (f[3] - '0'));
-        /* SS */
-        d->second = (uint8_t)((f[4] - '0') * 10 + (f[5] - '0'));
-        /* .sss (nếu có) */
-        if (f[6] == '.')
-        {
-            v = 0;
-            int digits = parse_uint(f + 7, &v);
-            /* ATGM336H xuất 3 chữ số thập phân → *100 để ra milliseconds */
-            if (digits == 1)
-                d->millisecond = (uint16_t)(v * 100);
-            else if (digits == 2)
-                d->millisecond = (uint16_t)(v * 10);
-            else if (digits == 3)
-                d->millisecond = (uint16_t)v;
-            else // digits > 3
-                d->millisecond = 0;
-        }
-        else
-        {
-            d->millisecond = 0;
-        }
-    }
+    // skip parse time, only parse on RMC
+    // if (f && field_len(f) >= 6)
+    // {
+    //     uint32_t v;
+    //     /* HH */
+    //     d->hour = (uint8_t)((f[0] - '0') * 10 + (f[1] - '0'));
+    //     /* MM */
+    //     d->minute = (uint8_t)((f[2] - '0') * 10 + (f[3] - '0'));
+    //     /* SS */
+    //     d->second = (uint8_t)((f[4] - '0') * 10 + (f[5] - '0'));
+    //     /* .sss (nếu có) */
+    //     if (f[6] == '.')
+    //     {
+    //         v = 0;
+    //         int digits = parse_uint(f + 7, &v);
+    //         /* ATGM336H xuất 3 chữ số thập phân → *100 để ra milliseconds */
+    //         if (digits == 1)
+    //             d->millisecond = (uint16_t)(v * 100);
+    //         else if (digits == 2)
+    //             d->millisecond = (uint16_t)(v * 10);
+    //         else if (digits == 3)
+    //             d->millisecond = (uint16_t)v;
+    //         else // digits > 3
+    //             d->millisecond = 0;
+    //     }
+    //     else
+    //     {
+    //         d->millisecond = 0;
+    //     }
+    // }
 
     /* ── Field 2–3: Vĩ độ + hướng ────────────────────────────────────── */
     f = field_ptr(sentence, 2);
@@ -322,6 +323,10 @@ static void parse_rmc(nmea_parser_t *p, const char *sentence)
                 d->millisecond = (uint16_t)v;
             else // digits > 3
                 d->millisecond = 0;
+        }
+        else
+        {
+            d->millisecond = 0;
         }
     }
 
