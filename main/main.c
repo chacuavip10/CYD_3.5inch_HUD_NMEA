@@ -27,6 +27,25 @@
  *  $GNVTG,0.00,T,,M,0.00,N,0.00,K,A*23
  *  $GNZDA,064939.000,30,01,2026,00,00*4D
  *  $GPTXT,01,01,01,ANTENNA OK*35
+ * ============================================================================
+ *  TODO
+ *  1) seperate ui_lvgl_task to dedicate lvgl_port_task & ui_task
+ *  lvgl_port task chỉ handle render
+ *  static void ui_lvgl_task(void *arg)
+    {
+        uint32_t time_till_next_ms;
+        while (1)
+        {
+            LVGL_LOCK();
+            time_till_next_ms = lv_timer_handler();
+            LVGL_UNLOCK();
+
+            time_till_next_ms = LV_MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
+            time_till_next_ms = LV_MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
+            vTaskDelay(pdMS_TO_TICKS(time_till_next_ms));
+        }
+    }
+ *  2) Chuyển các logic tính toán ra khỏi ui_task về gps task (tính timeout, format lat/long ...)
  */
 
 /* ========================================================================== */
@@ -1034,6 +1053,12 @@ static void debug_task(void *arg)
         if (events & EVT_RTC_SYNC_DONE)
         {
             ESP_LOGI(TAG, "RTC synced");
+            UBaseType_t gps_stack = uxTaskGetStackHighWaterMark(gps_task_handle);
+            UBaseType_t ui_stack = uxTaskGetStackHighWaterMark(ui_lvgl_task_handle);
+            UBaseType_t rtc_stack = uxTaskGetStackHighWaterMark(rtc_task_handle);
+            ESP_LOGI(TAG, "Free GPS stack in bytes: %u", gps_stack);
+            ESP_LOGI(TAG, "Free UI stack in bytes: %u", ui_stack);
+            ESP_LOGI(TAG, "Free RTC stack in bytes: %u", rtc_stack);
         }
     }
 }
@@ -1245,10 +1270,10 @@ void app_main(void)
      * RECOMMENDATION: If UART overflows are observed at high GPS baud rates,
      * raise gps_task priority to 7.
      */
-    xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 0);
+    xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
-    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 0);
+    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
 #endif
 }
