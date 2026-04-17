@@ -367,7 +367,7 @@ class UbxNmeaSimulator:
         lon, ew = deg_to_nmea_lon(self.lon)
         fixq = "1" if self.fix_type >= 2 else "0"
         nums = f"{max(0, min(12, self.sats)):02d}"
-        hdop = f"{random.uniform(0.5, 15.0):.1f}"
+        hdop = f"{random.uniform(0.5, 7.0):.1f}"
         alt = f"{self.h_m:.1f}"
         geoid = "0.0"
         parts = [
