@@ -939,9 +939,11 @@ static void ui_lvgl_task(void *arg)
                             ESP_LOGI(TAG, "Sync request sent to RTC Task");
                         }
                         else
+                        {
                             ESP_LOGI(TAG, "GPS --> No Fix");
-                        // Change signal bar to no_sig when gps lost fix
-                        lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                            // Change signal bar to no_sig when gps lost fix
+                            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                        }
                     }
 
                     /* -- Signal strength icon (only redrawn when level changes) -- */
