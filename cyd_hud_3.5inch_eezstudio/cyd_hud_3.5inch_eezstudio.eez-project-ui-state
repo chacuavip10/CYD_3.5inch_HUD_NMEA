@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
     "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/3",
     "subnavigationSelectedItems": {}
   },
@@ -195,16 +195,15 @@
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
-                  "name": "src_main",
+                  "name": "src_info",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -224,7 +223,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -444,10 +444,22 @@
               "type": "tabset",
               "id": "RUNTIME-EDITORS",
               "weight": 1,
-              "selected": -1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
-              "children": []
+              "children": [
+                {
+                  "type": "tab",
+                  "id": "#ddb904d4-854d-4209-a19b-82f947f4deac",
+                  "name": "src_main",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+                    "permanent": false
+                  },
+                  "icon": "svg:page"
+                }
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -1058,7 +1070,9 @@
       "selectionBack": {
         "0": {
           "0": {},
-          "1": {},
+          "1": {
+            "$selected": true
+          },
           "2": {},
           "3": {},
           "4": {},
@@ -1067,10 +1081,10 @@
       },
       "transform": {
         "translate": {
-          "x": -483,
-          "y": -318
+          "x": -240,
+          "y": -160
         },
-        "scale": 2.5
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1094,7 +1108,7 @@
           "x": -638.6428571428571,
           "y": -368.6439393939394
         },
-        "scale": 2.5
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1107,7 +1121,9 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {},
+          "1": {
+            "$selected": true
+          },
           "2": {},
           "3": {},
           "4": {}
@@ -1118,7 +1134,7 @@
           "x": -480,
           "y": -320
         },
-        "scale": 2.5
+        "scale": 1
       },
       "timeline": {
         "isEditorActive": false,
@@ -1155,19 +1171,21 @@
   "searchMatchWholeWord": false,
   "replaceEnabled": false,
   "replaceText": "",
+  "pageRuntimeFrontFace": true,
   "breakpoints": {},
   "watchExpressions": [],
   "showComponentDescriptions": true,
   "logsPanelFilter": "all",
   "selectedStylePropertyName": "",
   "lvglPart": "MAIN",
-  "lvglState": "DEFAULT",
+  "lvglState": "PRESSED",
   "lvglExpandedPropertiesGroup": [
-    "TEXT"
+    "TEXT",
+    "BACKGROUND"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 2.5,
+  "flowZoom": 1,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\Users\\chacu\\CYD_3.5inch_HUD_NMEA\\cyd_hud_3.5inch_eezstudio\\assets\\JetBrainsMono-Bold.ttf"
 }

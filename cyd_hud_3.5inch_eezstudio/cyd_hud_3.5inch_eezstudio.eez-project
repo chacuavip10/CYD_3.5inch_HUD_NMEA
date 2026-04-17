@@ -155,7 +155,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "main_prev_scr",
@@ -179,6 +179,9 @@
                 "objID": "3c118413-80ab-4027-a7ae-7fb4164bdf42",
                 "definition": {
                   "MAIN": {
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
+                    },
                     "DEFAULT": {
                       "bg_color": "#000000"
                     }
@@ -203,7 +206,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "main_next_scr",
@@ -229,6 +232,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
@@ -509,7 +515,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "btn_inc",
@@ -588,6 +594,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
@@ -668,7 +677,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "time_prev_scr",
@@ -694,6 +703,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
@@ -716,7 +728,7 @@
                 "conditionalStyles": [],
                 "childStyles": []
               },
-              "locked": true,
+              "locked": false,
               "timeline": [],
               "eventHandlers": [],
               "identifier": "time_next_scr",
@@ -742,6 +754,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
@@ -1057,6 +1072,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
@@ -1105,6 +1123,9 @@
                   "MAIN": {
                     "DEFAULT": {
                       "bg_color": "#000000"
+                    },
+                    "PRESSED": {
+                      "bg_color": "#ffffff"
                     }
                   }
                 }
