@@ -14,6 +14,7 @@
 
 static const char *TAG = "GPS_RTC";
 static int64_t s_last_sync_boot_ms = 0;
+static local_time_t cur_time;
 int calculate_weekday(int y, int m, int d)
 {
     if (m < 3)
@@ -159,11 +160,11 @@ void gps_rtc_sync(const gps_data_t *d)
     s_rtc_synced = true;
     s_last_sync_utc = utc_epoch;
     s_last_sync_boot_ms = esp_timer_get_time() / 1000; // µs → ms
-
+    gps_rtc_get_local_time(&cur_time);
     /* Log để debug */
     ESP_LOGI(TAG, "RTC synced – GPS UTC: %04d-%02d-%02d %02d:%02d:%02d",
-             d->year, d->month, d->day,
-             d->hour, d->minute, d->second);
+             cur_time.year, cur_time.month, cur_time.day,
+             cur_time.hour, cur_time.minute, cur_time.second);
 }
 
 void gps_rtc_get_local_time(local_time_t *out)
