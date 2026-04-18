@@ -1,7 +1,7 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/3",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -189,21 +189,37 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 65,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
-                  "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
-                  "name": "src_info",
+                  "id": "#b66bfe53-850e-4744-a29e-e923db41c31d",
+                  "name": "test",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
+                    "params": {
+                      "forceOpenEditor": true
+                    },
+                    "permanent": false
+                  },
+                  "icon": "material:font_download"
+                },
+                {
+                  "type": "tab",
+                  "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
+                  "name": "src_main",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -223,8 +239,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -671,6 +686,7 @@
             {
               "type": "tabset",
               "id": "#f69d5584-7826-42e0-8c47-6398795e0006",
+              "weight": 56.73662830060935,
               "enableDrop": false,
               "enableDrag": false,
               "enableClose": false,
@@ -682,12 +698,12 @@
                   "component": "glyphs",
                   "enableClose": false
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "tabset",
               "id": "#b186954e-bcbd-4093-8856-88e1ead3517b",
+              "weight": 143.26337169939066,
               "enableDrop": false,
               "enableDrag": false,
               "enableClose": false,
@@ -699,7 +715,8 @@
                   "component": "editor",
                   "enableClose": false
                 }
-              ]
+              ],
+              "active": true
             }
           ]
         }
@@ -1070,9 +1087,7 @@
       "selectionBack": {
         "0": {
           "0": {},
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
           "4": {},
@@ -1121,9 +1136,7 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "1": {
-            "$selected": true
-          },
+          "1": {},
           "2": {},
           "3": {},
           "4": {}
@@ -1187,5 +1200,5 @@
   "globalFlowZoom": true,
   "flowZoom": 1,
   "implementationLanguage": "C",
-  "openDialogDefaultPath": "C:\\Users\\chacu\\CYD_3.5inch_HUD_NMEA\\cyd_hud_3.5inch_eezstudio\\assets\\JetBrainsMono-Bold.ttf"
+  "openDialogDefaultPath": "C:\\Users\\chacu\\Downloads\\fa-sharp-solid-900.woff"
 }
