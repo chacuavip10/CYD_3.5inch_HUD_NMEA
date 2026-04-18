@@ -812,6 +812,7 @@ static void ui_lvgl_task(void *arg)
     ESP_LOGI(TAG, "Button callbacks registered");
     lv_label_set_text(objects.icon_sync_rtc, SYNC_SYMBOL);
     lv_label_set_text(objects.signal_bar_icon, SIG_NONE_SYMBOL);
+    lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
 
     while (1)
     {
@@ -990,6 +991,21 @@ static void ui_lvgl_task(void *arg)
                         {
                             last_signal = new_signal;
                             lv_label_set_text(objects.signal_bar_icon, signal_icon_table[new_signal]);
+                            switch (new_signal)
+                            {
+                            case SIG_MODERATE:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xFFB300), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            case SIG_GOOD:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x8BC34A), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            case SIG_EXCELLENT:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x4CAF50), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            default: // NO_SIG & SIG_BAD
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            }
                         }
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
