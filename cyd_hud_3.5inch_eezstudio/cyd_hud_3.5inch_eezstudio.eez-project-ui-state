@@ -1,7 +1,7 @@
 {
   "navigation": {
     "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -189,24 +189,9 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 65,
-              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
-                {
-                  "type": "tab",
-                  "id": "#b66bfe53-850e-4744-a29e-e923db41c31d",
-                  "name": "test",
-                  "component": "editor",
-                  "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
-                    "params": {
-                      "forceOpenEditor": true
-                    },
-                    "permanent": false
-                  },
-                  "icon": "material:font_download"
-                },
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
@@ -218,8 +203,7 @@
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -239,7 +223,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",

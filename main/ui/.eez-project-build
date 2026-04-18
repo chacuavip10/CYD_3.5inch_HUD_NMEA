@@ -12,6 +12,7 @@
     "ui.c",
     "ui.h",
     "ui_font_braille30.c",
+    "ui_font_font_awesome_icon_40.c",
     "ui_font_jb150.c",
     "ui_font_jb30.c",
     "ui_font_jb61.c",

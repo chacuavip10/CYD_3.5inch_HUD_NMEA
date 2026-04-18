@@ -88,6 +88,17 @@ void create_screen_src_main() {
             lv_label_set_text_static(obj, "SAT:0");
         }
         {
+            // signal_bar_icon
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.signal_bar_icon = obj;
+            lv_obj_set_pos(obj, 370, 13);
+            lv_obj_set_size(obj, 83, 46);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(obj, &ui_font_font_awesome_icon_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "X");
+        }
+        {
             // signal_streng
             lv_obj_t *obj = lv_image_create(parent_obj);
             objects.signal_streng = obj;
@@ -190,6 +201,17 @@ void create_screen_src_time() {
             lv_image_set_src(obj, &img_sync_48px);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
         }
+        {
+            // icon_sync_rtc
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.icon_sync_rtc = obj;
+            lv_obj_set_pos(obj, 417, 265);
+            lv_obj_set_size(obj, 48, 46);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(obj, &ui_font_font_awesome_icon_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "X");
+        }
     }
     
     tick_screen_src_time();
@@ -277,7 +299,7 @@ void create_screen_src_info() {
             lv_obj_set_size(obj, 138, 32);
             lv_obj_set_style_text_font(obj, &ui_font_braille30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "⠏");
+            lv_label_set_text(obj, _("⠏"));
         }
     }
     
@@ -311,6 +333,7 @@ ext_font_desc_t fonts[] = {
     { "jb150", &ui_font_jb150 },
     { "Braille30", &ui_font_braille30 },
     { "jb61", &ui_font_jb61 },
+    { "font_awesome_icon_40", &ui_font_font_awesome_icon_40 },
 #if LV_FONT_MONTSERRAT_8
     { "MONTSERRAT_8", &lv_font_montserrat_8 },
 #endif
