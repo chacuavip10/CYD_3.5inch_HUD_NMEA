@@ -159,6 +159,8 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define LVGL_TASK_STACK_SIZE (8 * 1024)
 #define LVGL_TASK_PRIORITY 5
 
+#define SYNC_SYMBOL "\xEF\x80\xA1"
+
 /* ========================================================================== */
 /*                              GPS SHARED DOUBLE BUFFER                       */
 /* ========================================================================== */
@@ -795,6 +797,7 @@ static void ui_lvgl_task(void *arg)
     lv_obj_add_event_cb(objects.info_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(objects.info_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Button callbacks registered");
+    lv_label_set_text(objects.icon_sync_rtc, SYNC_SYMBOL);
 
     while (1)
     {
@@ -997,7 +1000,7 @@ static void ui_lvgl_task(void *arg)
             if (events & EVT_RTC_SYNC_DONE)
             {
                 /* Flash the RTC-sync icon for 2 seconds to acknowledge the sync. */
-                ui_show_label_2s(objects.rtc_sync_icon);
+                ui_show_label_2s(objects.icon_sync_rtc);
                 ESP_LOGI(TAG, "RTC synced – icon shown");
             }
         }

@@ -36,7 +36,6 @@ typedef struct _objects_t {
     lv_obj_t *hour_minute;
     lv_obj_t *date;
     lv_obj_t *second;
-    lv_obj_t *rtc_sync_icon;
     lv_obj_t *icon_sync_rtc;
     lv_obj_t *info_prev_scr;
     lv_obj_t *info_next_scr;
