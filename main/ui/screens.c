@@ -91,20 +91,11 @@ void create_screen_src_main() {
             // signal_bar_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.signal_bar_icon = obj;
-            lv_obj_set_pos(obj, 370, 13);
-            lv_obj_set_size(obj, 83, 46);
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(obj, 370, 11);
+            lv_obj_set_size(obj, 83, 48);
             lv_obj_set_style_text_font(obj, &ui_font_font_awesome_icon_40, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "X");
-        }
-        {
-            // signal_streng
-            lv_obj_t *obj = lv_image_create(parent_obj);
-            objects.signal_streng = obj;
-            lv_obj_set_pos(obj, 405, 11);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_image_set_src(obj, &img_no_signal_48px);
         }
         {
             // btn_inc

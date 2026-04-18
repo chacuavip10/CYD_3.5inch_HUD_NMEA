@@ -160,6 +160,11 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define LVGL_TASK_PRIORITY 5
 
 #define SYNC_SYMBOL "\xEF\x80\xA1"
+#define SIG_NONE_SYMBOL "\xEF\x9A\x94"
+#define SIG_BAD_SYMBOL "\xEF\x9A\x91"
+#define SIG_MORDERATE_SYMBOL "\xEF\x9A\x92"
+#define SIG_GOOD_SYMBOL "\xEF\x9A\x93"
+#define SIG_EX_SYMBOL "\xEF\x9A\x90"
 
 /* ========================================================================== */
 /*                              GPS SHARED DOUBLE BUFFER                       */
@@ -252,12 +257,20 @@ static inline signal_level_t hdop_to_level(float hdop)
  * Icon lookup table indexed by signal_level_t.
  * Order must match the enum definition above.
  */
-static const void *signal_img_table[] = {
-    &img_no_signal_48px,       // SIG_NOSIGNAL
-    &img_signal_poor_48px,     // SIG_BAD
-    &img_signal_moderate_48px, // SIG_MODERATE
-    &img_signal_good_48px,     // SIG_GOOD
-    &img_signal_ex_48px        // SIG_EXCELLENT
+// static const void *signal_img_table[] = {
+//     &img_no_signal_48px,       // SIG_NOSIGNAL
+//     &img_signal_poor_48px,     // SIG_BAD
+//     &img_signal_moderate_48px, // SIG_MODERATE
+//     &img_signal_good_48px,     // SIG_GOOD
+//     &img_signal_ex_48px        // SIG_EXCELLENT
+// };
+
+static const void *signal_icon_table[] = {
+    &SIG_NONE_SYMBOL,      // SIG_NOSIGNAL
+    &SIG_BAD_SYMBOL,       // SIG_BAD
+    &SIG_MORDERATE_SYMBOL, // SIG_MODERATE
+    &SIG_GOOD_SYMBOL,      // SIG_GOOD
+    &SIG_EX_SYMBOL         // SIG_EXCELLENT
 };
 
 /* ========================================================================== */
@@ -798,6 +811,7 @@ static void ui_lvgl_task(void *arg)
     lv_obj_add_event_cb(objects.info_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Button callbacks registered");
     lv_label_set_text(objects.icon_sync_rtc, SYNC_SYMBOL);
+    lv_label_set_text(objects.signal_bar_icon, SIG_NONE_SYMBOL);
 
     while (1)
     {
@@ -821,7 +835,7 @@ static void ui_lvgl_task(void *arg)
 
             lv_label_set_text(objects.sat_num, "NO GPS");
             last_signal = SIG_NOSIGNAL;
-            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
             lv_label_set_text(objects.speed_after_adjust, "");
             if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
                 lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
@@ -945,7 +959,7 @@ static void ui_lvgl_task(void *arg)
                         {
                             ESP_LOGI(TAG, "GPS --> No Fix");
                             // Change signal bar to no_sig when gps lost fix
-                            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
                         }
                     }
 
@@ -975,7 +989,7 @@ static void ui_lvgl_task(void *arg)
                         if (new_signal != last_signal)
                         {
                             last_signal = new_signal;
-                            lv_image_set_src(objects.signal_streng, signal_img_table[new_signal]);
+                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[new_signal]);
                         }
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
