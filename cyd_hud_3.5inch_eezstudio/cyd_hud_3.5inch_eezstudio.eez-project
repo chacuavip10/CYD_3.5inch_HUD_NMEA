@@ -1181,7 +1181,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "FIX :",
+              "text": "FIX : NO FIX",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1233,7 +1233,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "HDOP:",
+              "text": "HDOP: ~",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1284,7 +1284,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "SAT :",
+              "text": "SAT : ~",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1335,7 +1335,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "LAT :",
+              "text": "LAT : ~",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1386,7 +1386,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "LONG:",
+              "text": "LONG: ~",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false

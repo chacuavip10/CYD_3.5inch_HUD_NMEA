@@ -985,6 +985,17 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
                         lv_label_set_text(objects.lat_info, "LAT :");
                         lv_label_set_text(objects.long_info, "LONG:");
+                        if (last_signal != SIG_NOSIGNAL)
+                        {
+                            last_signal = SIG_NOSIGNAL;
+
+                            lv_label_set_text(objects.signal_bar_icon,
+                                              signal_icon_table[SIG_NOSIGNAL]);
+
+                            lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                        lv_color_hex(0xff4c4c),
+                                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+                        }
                     }
                     else
                     {
