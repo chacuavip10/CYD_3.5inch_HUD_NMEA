@@ -836,6 +836,7 @@ static void ui_lvgl_task(void *arg)
 
             lv_label_set_text(objects.sat_num, "NO GPS");
             last_signal = SIG_NOSIGNAL;
+            lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
             lv_label_set_text(objects.speed_after_adjust, "");
             if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))

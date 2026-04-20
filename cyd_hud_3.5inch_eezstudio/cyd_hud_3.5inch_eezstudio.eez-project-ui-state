@@ -1,7 +1,9 @@
 {
   "navigation": {
     "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
-    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/-1",
+    "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
+    "selectedGlyphObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4/glyphs/3",
+    "selectedBitmapObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/bitmaps/-1",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -22,7 +24,7 @@
           },
           {
             "type": "border",
-            "selected": 1,
+            "selected": 2,
             "size": 240,
             "location": "right",
             "children": [
@@ -189,9 +191,24 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 65,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
+                {
+                  "type": "tab",
+                  "id": "#48e9a3da-2075-427f-8482-7963e8b9d7be",
+                  "name": "font_awesome_icon_40",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
+                    "params": {
+                      "forceOpenEditor": true
+                    },
+                    "permanent": false
+                  },
+                  "icon": "material:font_download"
+                },
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
@@ -203,7 +220,8 @@
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -223,8 +241,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -683,7 +700,8 @@
                   "component": "glyphs",
                   "enableClose": false
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "tabset",
@@ -700,8 +718,7 @@
                   "component": "editor",
                   "enableClose": false
                 }
-              ],
-              "active": true
+              ]
             }
           ]
         }
@@ -1076,7 +1093,9 @@
           "2": {},
           "3": {},
           "4": {},
-          "7": {}
+          "7": {
+            "0": {}
+          }
         }
       },
       "transform": {
@@ -1084,7 +1103,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1100,15 +1119,18 @@
           "0": {},
           "1": {},
           "2": {},
-          "4": {}
+          "4": {},
+          "5": {
+            "$selected": true
+          }
         }
       },
       "transform": {
         "translate": {
-          "x": -638.6428571428571,
-          "y": -368.6439393939394
+          "x": -698.4285714285713,
+          "y": -74.30492424242425
         },
-        "scale": 1
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1124,7 +1146,10 @@
           "1": {},
           "2": {},
           "3": {},
-          "4": {}
+          "4": {},
+          "7": {
+            "$selected": true
+          }
         }
       },
       "transform": {
@@ -1132,7 +1157,7 @@
           "x": -480,
           "y": -320
         },
-        "scale": 1
+        "scale": 1.25
       },
       "timeline": {
         "isEditorActive": false,
@@ -1176,14 +1201,14 @@
   "logsPanelFilter": "all",
   "selectedStylePropertyName": "",
   "lvglPart": "MAIN",
-  "lvglState": "PRESSED",
+  "lvglState": "DEFAULT",
   "lvglExpandedPropertiesGroup": [
     "TEXT",
     "BACKGROUND"
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1,
+  "flowZoom": 1.25,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\Users\\chacu\\Downloads\\fa-sharp-solid-900.woff"
 }
