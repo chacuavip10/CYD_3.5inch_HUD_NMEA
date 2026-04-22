@@ -268,14 +268,6 @@ static void update_odometer_ema(float current_speed_kmh, bool is_valid, bool res
  *   >= 5.0 → Bad         (unreliable fix; heavy urban canyon / indoors)
  *   special → No Signal  (GPS module not communicating at all)
  */
-typedef enum
-{
-    SIG_NOSIGNAL = 0,
-    SIG_BAD,
-    SIG_MODERATE,
-    SIG_GOOD,
-    SIG_EXCELLENT
-} signal_level_t;
 
 /**
  * @brief Convert a raw HDOP float to a discrete signal_level_t.
@@ -722,18 +714,24 @@ static void gps_task(void *arg)
 
                 update_odometer_ema(parser.data.speed_kmh, parser.data.valid, ema_need_reset);
                 parser.data.odometer_m = g_odometer_m;
+                parser.data.valid_changed = (parser.data.valid != last_valid);
+                parser.data.signal_level = hdop_to_level(parser.data.hdop);
+                if (!parser.data.valid)
+                {
+                    parser.data.signal_level = SIG_NOSIGNAL;
+                }
                 /* Write to the inactive slot, then flip the index atomically. */
                 uint8_t next = g_gps.index ^ 1;
                 g_gps.buf[next] = parser.data;
                 __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
                 /* ── No fix → Fix: request sync ngay ───────────────────────────────── */
-                bool valid_changed = (parser.data.valid != last_valid);
-                if (valid_changed && parser.data.valid)
+                if (parser.data.valid_changed && parser.data.valid)
                 {
                     xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
                     ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc], GPS no fix → fix, request RTC sync (seq=%lu)", parser.data.seq);
                 }
                 last_valid = parser.data.valid;
+
                 /* Quyết định RTC sync */
                 if (gps_rtc_should_sync(&parser.data))
                 {
@@ -913,8 +911,8 @@ static void ui_task(void *arg)
     uint32_t events;
     gps_data_t d;
     gps_data_t last_data = {};
+    last_data.signal_level = 0xFF;
     uint8_t spinGps = 0;
-    signal_level_t last_signal = 0xFF;
     local_time_t current_time = {};
     local_time_t last_time = {};
     char lat_buf[32];
@@ -1017,7 +1015,7 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.speed_after_adjust, "");
                 if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
                     lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
-                last_signal = SIG_NOSIGNAL;
+                last_data.signal_level = SIG_NOSIGNAL;
                 lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
                 lv_obj_set_style_text_color(objects.signal_bar_icon,
                                             lv_color_hex(0xff4c4c),
@@ -1048,93 +1046,86 @@ static void ui_task(void *arg)
                     lv_label_set_text_fmt(objects.odometer_m, "%.1f km", d.odometer_m / 1000);
                 }
 
-                if (d.seq != last_data.seq)
+                if (d.valid_changed && d.valid)
+                    ESP_LOGI("UI", "GPS --> Fix");
+                else if (d.valid_changed && !d.valid)
                 {
-                    bool valid_changed = (d.valid != last_data.valid);
-                    if (valid_changed && d.valid)
-                        ESP_LOGI("UI", "GPS --> Fix");
-                    else if (valid_changed && !d.valid)
+                    ESP_LOGI("UI", "GPS --> No Fix");
+                    lv_label_set_text(objects.signal_bar_icon,
+                                      signal_icon_table[SIG_NOSIGNAL]);
+                }
+
+                int speed_kmh = (int)(d.speed_kmh + 0.5f);
+                if (speed_kmh < 1)
+                    speed_kmh = 0;
+                else
+                    speed_kmh += speed_compensation;
+
+                if (!d.valid)
+                {
+                    lv_label_set_text(objects.speed_after_adjust, "");
+                    lv_label_set_text(objects.fix_info, "FIX : NO");
+                    lv_label_set_text(objects.sat_num, "NOT FIXED!");
+                    lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f (LAST)", d.hdop);
+                    lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
+                    lv_label_set_text(objects.lat_info, "LAT :");
+                    lv_label_set_text(objects.long_info, "LONG:");
+                    if (last_data.signal_level != SIG_NOSIGNAL)
                     {
-                        ESP_LOGI("UI", "GPS --> No Fix");
+                        last_data.signal_level = SIG_NOSIGNAL;
                         lv_label_set_text(objects.signal_bar_icon,
                                           signal_icon_table[SIG_NOSIGNAL]);
+                        lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                    lv_color_hex(0xff4c4c),
+                                                    LV_PART_MAIN | LV_STATE_DEFAULT);
                     }
-
-                    signal_level_t new_signal = hdop_to_level(d.hdop);
-
-                    int speed_kmh = (int)(d.speed_kmh + 0.5f);
-                    if (speed_kmh < 1)
-                        speed_kmh = 0;
-                    else
-                        speed_kmh += speed_compensation;
-
-                    if (!d.valid)
+                }
+                else
+                {
+                    if (d.signal_level != last_data.signal_level)
                     {
-                        lv_label_set_text(objects.speed_after_adjust, "");
-                        lv_label_set_text(objects.fix_info, "FIX : NO");
-                        lv_label_set_text(objects.sat_num, "NOT FIXED!");
-                        lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f (LAST)", d.hdop);
-                        lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
-                        lv_label_set_text(objects.lat_info, "LAT :");
-                        lv_label_set_text(objects.long_info, "LONG:");
-                        if (last_signal != SIG_NOSIGNAL)
+                        lv_label_set_text(objects.signal_bar_icon,
+                                          signal_icon_table[d.signal_level]);
+                        switch (d.signal_level)
                         {
-                            last_signal = SIG_NOSIGNAL;
-                            lv_label_set_text(objects.signal_bar_icon,
-                                              signal_icon_table[SIG_NOSIGNAL]);
+                        case SIG_MODERATE:
+                            lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                        lv_color_hex(0xFFB300),
+                                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+                            break;
+                        case SIG_GOOD:
+                            lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                        lv_color_hex(0x8BC34A),
+                                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+                            break;
+                        case SIG_EXCELLENT:
+                            lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                        lv_color_hex(0x4CAF50),
+                                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+                            break;
+                        default:
                             lv_obj_set_style_text_color(objects.signal_bar_icon,
                                                         lv_color_hex(0xff4c4c),
                                                         LV_PART_MAIN | LV_STATE_DEFAULT);
+                            break;
                         }
                     }
-                    else
-                    {
-                        if (new_signal != last_signal)
-                        {
-                            last_signal = new_signal;
-                            lv_label_set_text(objects.signal_bar_icon,
-                                              signal_icon_table[new_signal]);
-                            switch (new_signal)
-                            {
-                            case SIG_MODERATE:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon,
-                                                            lv_color_hex(0xFFB300),
-                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
-                                break;
-                            case SIG_GOOD:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon,
-                                                            lv_color_hex(0x8BC34A),
-                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
-                                break;
-                            case SIG_EXCELLENT:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon,
-                                                            lv_color_hex(0x4CAF50),
-                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
-                                break;
-                            default:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon,
-                                                            lv_color_hex(0xff4c4c),
-                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
-                                break;
-                            }
-                        }
 
-                        lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
-                        lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
-                        lv_label_set_text(objects.fix_info, "FIX : YES");
-                        lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
-                        lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
-                        format_lat(d.latitude, lat_buf, sizeof(lat_buf));
-                        format_lon(d.longitude, lon_buf, sizeof(lon_buf));
-                        lv_label_set_text(objects.lat_info, lat_buf);
-                        lv_label_set_text(objects.long_info, lon_buf);
-                    }
-
-                    lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
-                    lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
-
-                    last_data = d;
+                    lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
+                    lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
+                    lv_label_set_text(objects.fix_info, "FIX : YES");
+                    lv_label_set_text_fmt(objects.hdop_info, "HDOP: %.1f", d.hdop);
+                    lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
+                    format_lat(d.latitude, lat_buf, sizeof(lat_buf));
+                    format_lon(d.longitude, lon_buf, sizeof(lon_buf));
+                    lv_label_set_text(objects.lat_info, lat_buf);
+                    lv_label_set_text(objects.long_info, lon_buf);
                 }
+
+                lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
+                lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
+
+                last_data = d;
             }
 
             /* ── EVT_RTC_STALE ───────────────────────────────────────────── */

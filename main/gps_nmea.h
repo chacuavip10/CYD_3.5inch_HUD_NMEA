@@ -41,6 +41,22 @@ extern "C"
      * Trường `updated` được set = true mỗi khi parse thành công một bản tin;
      * ứng dụng cần tự clear về false sau khi đọc.
      */
+    typedef enum
+    {
+        NMEA_STATE_IDLE = 0, /**< Chờ ký tự '$' bắt đầu câu              */
+        NMEA_STATE_SENTENCE, /**< Đang đọc phần thân câu, tính checksum  */
+        NMEA_STATE_CKSUM_1,  /**< Đọc nibble cao của checksum (hex)      */
+        NMEA_STATE_CKSUM_2,  /**< Đọc nibble thấp của checksum (hex)     */
+    } nmea_state_t;
+
+    typedef enum
+    {
+        SIG_NOSIGNAL = 0,
+        SIG_BAD,
+        SIG_MODERATE,
+        SIG_GOOD,
+        SIG_EXCELLENT
+    } signal_level_t;
     typedef struct
     {
         /* ── Thời gian UTC (từ GGA hoặc RMC) ─────────────────────────────────── */
@@ -61,7 +77,8 @@ extern "C"
         /* ── Chất lượng tín hiệu (từ GGA) ───────────────────────────────────── */
         uint8_t satellites; /**< Số vệ tinh đang dùng                      */
         float hdop;         /**< Horizontal Dilution of Precision           */
-        float altitude_m;   /**< Độ cao so với mực nước biển (mét)         */
+        signal_level_t signal_level;
+        float altitude_m; /**< Độ cao so với mực nước biển (mét)         */
 
         /* ── Chuyển động (từ RMC) ────────────────────────────────────────────── */
         float speed_kmh;  /**< Tốc độ km/h (đã chuyển từ knots)          */
@@ -71,8 +88,9 @@ extern "C"
         double odometer_m; /**< Odometer in met          */
 
         /* ── Trạng thái ──────────────────────────────────────────────────────── */
-        bool valid;   /**< true = fix hợp lệ (RMC status == 'A')    */
-        uint32_t seq; // version, tracking dữ liệu mới
+        bool valid;         /**< true = fix hợp lệ (RMC status == 'A')    */
+        bool valid_changed; // Flag báo hiệu trạng thái Fix vừa thay đổi ở frame này
+        uint32_t seq;       // version, tracking dữ liệu mới
     } gps_data_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
@@ -87,13 +105,6 @@ extern "C"
      *                    │ (overflow/\r\n)                              ↑
      *                    └──────────────────────────────────────────────┘
      */
-    typedef enum
-    {
-        NMEA_STATE_IDLE = 0, /**< Chờ ký tự '$' bắt đầu câu              */
-        NMEA_STATE_SENTENCE, /**< Đang đọc phần thân câu, tính checksum  */
-        NMEA_STATE_CKSUM_1,  /**< Đọc nibble cao của checksum (hex)      */
-        NMEA_STATE_CKSUM_2,  /**< Đọc nibble thấp của checksum (hex)     */
-    } nmea_state_t;
 
     /**
      * @brief Context của NMEA parser – mỗi port UART nên có một instance riêng.
