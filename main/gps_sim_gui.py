@@ -620,9 +620,9 @@ class UbxNmeaSimulator:
                         self.hacc_mm = random.randint(1000, 5000)
                         self.sacc_mms = random.randint(120, 500)
                         # self.sacc_mms = 0
-                    if random.random() < 0.002:
-                        self.fix_type = 0
-                        self.sats = random.randint(0, 2)
+                    # if random.random() < 0.002:
+                    #     self.fix_type = 0
+                    #     self.sats = random.randint(0, 2)
 
                 # Motion
                 tgt = self._target_speed(now)

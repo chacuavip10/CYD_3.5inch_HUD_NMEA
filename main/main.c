@@ -206,6 +206,54 @@ static inline void gps_read_latest(gps_data_t *out)
 }
 
 /* ========================================================================== */
+/*                              ODOMETER                                      */
+/* ========================================================================== */
+/* --- Odometer & EMA Configuration --- */
+static double g_odometer_m = 0.0;    // Tổng quãng đường tính bằng mét
+static float g_ema_speed_kmh = 0.0f; // Vận tốc sau khi lọc EMA
+static float g_ema_alpha = 0.3f;     // Hệ số lọc (0.1 - 0.5), càng nhỏ càng mượt nhưng càng trễ
+static uint32_t g_last_odo_tick = 0; // Lưu tick cuối cùng để tính delta time
+
+/**
+ * @brief Cập nhật Odometer và lọc vận tốc EMA.
+ * @param current_speed_kmh Vận tốc thô từ GPS module.
+ * @param is_valid Trạng thái fix của GPS.
+ * @param reset_ema Nếu true, gán thẳng vận tốc hiện tại vào EMA (dùng khi mới có fix lại).
+ */
+static void update_odometer_ema(float current_speed_kmh, bool is_valid, bool reset)
+{
+    if (!is_valid)
+    {
+        g_ema_speed_kmh = 0;
+        // Không cập nhật g_last_odo_tick ở đây để khi có fix lại,
+        // logic reset ở gps_task sẽ xử lý.
+        return;
+    }
+
+    uint32_t now = xTaskGetTickCount();
+
+    if (reset)
+    {
+        g_ema_speed_kmh = current_speed_kmh;
+        g_last_odo_tick = now; // Chốt mốc thời gian mới
+        return;                // THOÁT: Không cộng dồn quãng đường cho frame reset này
+    }
+
+    // Tính Delta Time
+    double delta_t_sec = (double)(now - g_last_odo_tick) / configTICK_RATE_HZ;
+    g_last_odo_tick = now;
+
+    // Lọc EMA
+    g_ema_speed_kmh = (g_ema_alpha * current_speed_kmh) + ((1.0f - g_ema_alpha) * g_ema_speed_kmh);
+
+    // Cộng dồn Odometer (chỉ cộng khi vận tốc đủ lớn để lọc nhiễu)
+    if (g_ema_speed_kmh > 0.8f)
+    {
+        g_odometer_m += (g_ema_speed_kmh / 3.6) * delta_t_sec;
+    }
+}
+
+/* ========================================================================== */
 /*                              SIGNAL QUALITY HELPERS                         */
 /* ========================================================================== */
 
@@ -245,18 +293,6 @@ static inline signal_level_t hdop_to_level(float hdop)
         return SIG_GOOD;
     return SIG_EXCELLENT;
 }
-
-/*
- * Icon lookup table indexed by signal_level_t.
- * Order must match the enum definition above.
- */
-// static const void *signal_img_table[] = {
-//     &img_no_signal_48px,       // SIG_NOSIGNAL
-//     &img_signal_poor_48px,     // SIG_BAD
-//     &img_signal_moderate_48px, // SIG_MODERATE
-//     &img_signal_good_48px,     // SIG_GOOD
-//     &img_signal_ex_48px        // SIG_EXCELLENT
-// };
 
 static const void *signal_icon_table[] = {
     &SIG_NONE_SYMBOL,      // SIG_NOSIGNAL
@@ -663,6 +699,16 @@ static void gps_task(void *arg)
             if (parser.data.seq != last_seq)
             {
                 last_parsed_tick = now;
+                // Nếu vừa hồi phục từ timeout hoặc vừa có fix, hãy reset EMA
+                bool ema_need_reset = gps_timeout || (parser.data.valid && !last_valid);
+                if (ema_need_reset)
+                {
+                    // QUAN TRỌNG: Đồng bộ lại tick để delta_t của lần tính tới sẽ bắt đầu từ điểm này
+                    g_last_odo_tick = now;
+                    // Gán thẳng vận tốc hiện tại cho EMA để tránh việc lọc từ giá trị 0 cũ
+                    g_ema_speed_kmh = parser.data.valid ? parser.data.speed_kmh : 0;
+                    ESP_LOGI("GPS", "EMA/Odo Reset - Syncing tick to prevent jump");
+                }
                 /* Phục hồi: chỉ báo UI sau khi có bản tin hợp lệ, không phải khi có byte */
                 if (gps_timeout)
                 {
@@ -673,6 +719,9 @@ static void gps_task(void *arg)
                     xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
                     ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
                 }
+
+                update_odometer_ema(parser.data.speed_kmh, parser.data.valid, ema_need_reset);
+                parser.data.odometer_m = g_odometer_m;
                 /* Write to the inactive slot, then flip the index atomically. */
                 uint8_t next = g_gps.index ^ 1;
                 g_gps.buf[next] = parser.data;
@@ -711,6 +760,8 @@ static void gps_task(void *arg)
                 gps_timeout = true;
                 xTaskNotify(ui_task_handle, EVT_GPS_TIMEOUT, eSetBits);
                 ESP_LOGW("GPS", " [EVT_GPS_TIMEOUT -> ui] GPS timeout > %ds – notifying UI", GPS_COM_TIMEOUT_MS / 1000);
+                g_last_odo_tick = 0; // Reset tick để không tính quãng đường nhảy vọt khi có tín hiệu lại
+                g_ema_speed_kmh = 0;
             }
         }
         last_stale_check = xTaskGetTickCount();
@@ -986,7 +1037,16 @@ static void ui_task(void *arg)
             if (events & EVT_GPS_UPDATE)
             {
                 gps_read_latest(&d);
+                // ESP_LOGI("UI", "ODO: %.2f m", d.odometer_m);
                 spinGps = (spinGps + 1) % frames_len;
+                if (d.odometer_m < 1000)
+                {
+                    lv_label_set_text_fmt(objects.odometer_m, "%.0f m", d.odometer_m);
+                }
+                else
+                {
+                    lv_label_set_text_fmt(objects.odometer_m, "%.1f km", d.odometer_m / 1000);
+                }
 
                 if (d.seq != last_data.seq)
                 {

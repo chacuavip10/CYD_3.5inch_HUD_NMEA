@@ -67,6 +67,9 @@ extern "C"
         float speed_kmh;  /**< Tốc độ km/h (đã chuyển từ knots)          */
         float course_deg; /**< Hướng đi (độ, 0–360, 0 = Bắc)            */
 
+        /* ── Chuyển động (từ RMC) ────────────────────────────────────────────── */
+        double odometer_m; /**< Odometer in met          */
+
         /* ── Trạng thái ──────────────────────────────────────────────────────── */
         bool valid;   /**< true = fix hợp lệ (RMC status == 'A')    */
         uint32_t seq; // version, tracking dữ liệu mới

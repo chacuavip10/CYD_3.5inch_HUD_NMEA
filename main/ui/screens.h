@@ -30,6 +30,7 @@ typedef struct _objects_t {
     lv_obj_t *signal_bar_icon;
     lv_obj_t *btn_inc;
     lv_obj_t *speed_adjust_main;
+    lv_obj_t *odometer_m;
     lv_obj_t *time_prev_scr;
     lv_obj_t *time_next_scr;
     lv_obj_t *hour_minute;
