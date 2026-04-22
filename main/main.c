@@ -29,23 +29,11 @@
  *  $GPTXT,01,01,01,ANTENNA OK*35
  * ============================================================================
  *  TODO
- *  1) seperate ui_lvgl_task to dedicate lvgl_port_task & ui_task
- *  lvgl_port task chỉ handle render
- *  static void ui_lvgl_task(void *arg)
-    {
-        uint32_t time_till_next_ms;
-        while (1)
-        {
-            LVGL_LOCK();
-            time_till_next_ms = lv_timer_handler();
-            LVGL_UNLOCK();
-
-            time_till_next_ms = LV_MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
-            time_till_next_ms = LV_MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
-            vTaskDelay(pdMS_TO_TICKS(time_till_next_ms));
-        }
-    }
- *  2) Chuyển các logic tính toán ra khỏi ui_task về gps task (tính timeout, format lat/long ...)
+ *  1) [IN PROGRESS] Chuyển các logic tính toán ra khỏi ui_task về gps_task
+ *     (tính timeout, format lat/long, hdop_to_level …)
+ *  2) Persist speed_compensation vào NVS để giữ giá trị qua reboot.
+ *  3) Cân nhắc tách EVT_GPS_TIMEOUT thành event riêng thay vì kiểm tra
+ *     trong ui_task mỗi frame.
  */
 
 /* ========================================================================== */
@@ -106,7 +94,8 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 /* --- Task handles (populated at startup) --- */
 static TaskHandle_t gps_task_handle;
 static TaskHandle_t rtc_task_handle;
-static TaskHandle_t ui_lvgl_task_handle;
+static TaskHandle_t ui_task_handle;
+static TaskHandle_t lvgl_task_handle;
 #if DEBUG_TASK
 static TaskHandle_t dbg_task_handle;
 #endif
@@ -117,7 +106,7 @@ static TaskHandle_t dbg_task_handle;
 
 /*
  * Single mutex guards all LVGL API calls.
- * Only one task (ui_lvgl_task) ever calls LVGL; the mutex exists as a safety
+ * Only one task (ui_task) ever calls LVGL; the mutex exists as a safety
  * guard when the initialization path (app_main) also touches LVGL before the
  * task is running.
  */
@@ -176,7 +165,7 @@ static SemaphoreHandle_t s_lvgl_mutex;
  * How it works:
  *   - gps_task (writer) always writes to the *inactive* slot (index ^ 1),
  *     then atomically flips `index` to point readers at the new data.
- *   - Readers (ui_lvgl_task, rtc_sync_task) call gps_read_latest(), which
+ *   - Readers (ui_task, rtc_sync_task) call gps_read_latest(), which
  *     re-reads `index` before and after copying to detect a concurrent flip.
  *     If a flip happened mid-copy, the read is retried.
  *
@@ -421,10 +410,10 @@ static int current_screen = SCREEN_ID_SRC_MAIN;
 static lv_timer_t *label_timer = NULL;
 
 /**
- * @brief LVGL timer callback – hides the target image after 2 seconds.
+ * @brief LVGL timer callback – ẩn widget chỉ định sau 2 giây.
  *
- * After hiding, the timer is paused so it does not fire again until the
- * next call to ui_show_label_2s().
+ * Sau khi ẩn, timer bị pause để không tự kích hoạt lại cho đến lần
+ * gọi ui_show_label_2s() tiếp theo.
  */
 static void hide_label_cb(lv_timer_t *t)
 {
@@ -435,12 +424,12 @@ static void hide_label_cb(lv_timer_t *t)
 }
 
 /**
- * @brief Show an LVGL image object for 2 seconds, then auto-hide it.
+ * @brief Hiển thị một LVGL widget trong 2 giây rồi tự ẩn.
  *
- * Safe to call repeatedly; calling it while the image is already visible
- * simply resets the 2-second countdown.
+ * An toàn khi gọi lặp lại: nếu widget đang hiển thị, countdown 2 giây
+ * sẽ được reset lại từ đầu.
  *
- * @param label  The LVGL image object to display temporarily.
+ * @param label  Widget LVGL cần hiển thị tạm thời.
  */
 void ui_show_label_2s(lv_obj_t *label)
 {
@@ -622,7 +611,7 @@ static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
  * the incremental NMEA FSM parser, and on each completed sentence:
  *   1. Writes the new gps_data_t into the inactive double-buffer slot.
  *   2. Atomically flips the slot index (making the new data "live").
- *   3. Notifies rtc_sync_task and ui_lvgl_task via FreeRTOS task notification.
+ *   3. Notifies rtc_sync_task and ui_task via FreeRTOS task notification.
  *
  * The `seq` counter in gps_data_t allows receivers to detect stale reads
  * without additional locking.
@@ -657,7 +646,7 @@ static void gps_task(void *arg)
                 __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
 
                 xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
-                xTaskNotify(ui_lvgl_task_handle, EVT_GPS_UPDATE, eSetBits);
+                xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
 #if DEBUG_TASK
                 ESP_LOGI("DEBUG", "Event Sent from [GPS_TASK]");
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
@@ -680,7 +669,7 @@ static void gps_task(void *arg)
  * On each wakeup it reads the latest GPS data and calls gps_rtc_should_sync()
  * to decide whether a re-sync is needed (e.g. first valid fix, or periodic
  * drift correction). If so, it syncs the ESP32 system time from the GPS UTC
- * timestamp and notifies ui_lvgl_task so the UI can flash a sync icon.
+ * timestamp and notifies ui_task so the UI can flash a sync icon.
  *
  * RECOMMENDATION: gps_rtc_should_sync() should enforce a minimum re-sync
  * interval (e.g. once per minute) to avoid hammering the RTC on every packet
@@ -721,7 +710,7 @@ static void rtc_sync_task(void *arg)
             if (should_sync_rtc)
             {
                 gps_rtc_sync(&d);
-                xTaskNotify(ui_lvgl_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
+                xTaskNotify(ui_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
 #if DEBUG_TASK
                 ESP_LOGI("DEBUG", "Event Sent from [RTC_SYNC_TASK]");
                 xTaskNotify(dbg_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
@@ -732,11 +721,43 @@ static void rtc_sync_task(void *arg)
 }
 
 /* ========================================================================== */
-/*                              UI + LVGL TASK (COMBINED)                      */
+/*                              UI + LVGL TASK                                */
 /* ========================================================================== */
 
 /**
- * @brief Combined UI update and LVGL rendering task.
+ * @brief LVGL rendering task – gọi lv_timer_handler() theo chu kỳ thích nghi.
+ *
+ * Task này là vòng lặp render thuần tuý: không xử lý GPS, không đọc RTC.
+ * Mọi logic nghiệp vụ nằm ở ui_task; lvgl_port_task chỉ bơm LVGL timer
+ * để các widget dirty được vẽ ra màn hình.
+ *
+ * Delay thích nghi:
+ *   lv_timer_handler() trả về số ms đến timer LVGL tiếp theo. Giá trị này
+ *   được clamp vào [LVGL_TASK_MIN_DELAY_MS, LVGL_TASK_MAX_DELAY_MS] để
+ *   tránh busy-wait mà vẫn đảm bảo wakeup tối thiểu 2 lần/giây.
+ */
+static void lvgl_port_task(void *arg)
+{
+    ESP_LOGI(TAG, "Starting LVGL PORT task (rendering)");
+    uint32_t time_till_next_ms = 0;
+    while (1)
+    {
+        LVGL_LOCK();
+        time_till_next_ms = lv_timer_handler();
+        LVGL_UNLOCK();
+        /* ── ADAPTIVE DELAY ─────────────────────────────────────────────── */
+        /*
+         * lv_timer_handler() trả về ms đến LVGL timer kế tiếp.
+         * Clamp MIN=5 ms tránh CPU spin, MAX=500 ms đảm bảo wakeup tối thiểu.
+         */
+        time_till_next_ms = LV_MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
+        time_till_next_ms = LV_MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(time_till_next_ms));
+    }
+}
+
+/**
+ * @brief UI update.
  *
  * This task is the sole caller of all LVGL APIs at runtime, which means:
  *   - No re-entrant LVGL calls are possible → the mutex is only needed to
@@ -746,15 +767,12 @@ static void rtc_sync_task(void *arg)
  *
  * Loop structure per iteration:
  *   1. LVGL_LOCK  ──────────────────────────────────────────────────────────
- *   2. lv_timer_handler()   – processes all pending LVGL timers and animates
- *                             any dirty widgets; returns ms until next timer.
  *   3. Poll the RTC clock   – update time/date labels only when they change.
  *   4. GPS timeout check    – if no GPS packet arrived within GPS_COM_TIMEOUT_MS,
  *                             blank speed/position and switch to the NO GPS state.
  *   5. xTaskNotifyWait(0)   – non-blocking check for pending events:
  *        EVT_GPS_UPDATE → read new GPS frame, update speed/sat/position labels.
  *        EVT_RTC_SYNC_DONE   → flash the RTC-sync icon for 2 seconds.
- *   6. LVGL_UNLOCK ─────────────────────────────────────────────────────────
  *   7. vTaskDelay(clamped)  – yield for lv_timer_handler's requested interval,
  *                             clamped to [MIN=5 ms, MAX=500 ms].
  *
@@ -765,12 +783,11 @@ static void rtc_sync_task(void *arg)
  * overflows, increase LVGL_TASK_STACK_SIZE and monitor watermark via
  * uxTaskGetStackHighWaterMark() in a debug build.
  */
-static void ui_lvgl_task(void *arg)
+static void ui_task(void *arg)
 {
-    ESP_LOGI(TAG, "UI+LVGL combined task started");
+    ESP_LOGI(TAG, "UI task started");
 
     uint32_t events;
-    uint32_t time_till_next_ms;
     gps_data_t d;
     gps_data_t last_data = {};
     uint8_t spinGps = 0;
@@ -816,13 +833,12 @@ static void ui_lvgl_task(void *arg)
 
     while (1)
     {
-        /* ── SECTION 1: LVGL TIMER + RENDER ─────────────────────────────── */
         LVGL_LOCK();
-        time_till_next_ms = lv_timer_handler();
 
         uint32_t now = lv_tick_get();
 
-        /* ── SECTION 2: GPS COMMUNICATION TIMEOUT CHECK ─────────────────── */
+        /* ── SECTION 1: GPS COMMUNICATION TIMEOUT CHECK ─────────────────── */
+
         /*
          * If no GPS sentence has arrived within GPS_COM_TIMEOUT_MS, the module
          * may be unpowered, physically disconnected, or obstructed. Blank all
@@ -850,7 +866,7 @@ static void ui_lvgl_task(void *arg)
             lv_label_set_text(objects.long_info, "LONG: ");
         }
 
-        /* ── SECTION 3: RTC CLOCK DISPLAY ───────────────────────────────── */
+        /* ── SECTION 2: RTC CLOCK DISPLAY ───────────────────────────────── */
         /*
          * Read the local time from the RTC module on every loop iteration so
          * the clock display updates every second even when no new GPS packet
@@ -912,7 +928,7 @@ static void ui_lvgl_task(void *arg)
 
         last_time = current_time;
 
-        /* ── SECTION 4: EVENT DISPATCH ───────────────────────────────────── */
+        /* ── SECTION 3: EVENT DISPATCH ──────────────────────────────────── */
         /*
          * Non-blocking poll (timeout = 0): consume any pending notifications
          * while still holding the LVGL mutex so LVGL widget updates inside
@@ -1047,20 +1063,8 @@ static void ui_lvgl_task(void *arg)
             }
         }
         LVGL_UNLOCK();
-
-        /* ── SECTION 5: ADAPTIVE DELAY ──────────────────────────────────── */
-        /*
-         * lv_timer_handler() returns the number of ms until the next LVGL
-         * timer fires. We clamp this value:
-         *   MIN = LVGL_TASK_MIN_DELAY_MS (5 ms)  → prevents CPU spin-lock and
-         *         gives the RTOS scheduler a chance to run other tasks.
-         *   MAX = LVGL_TASK_MAX_DELAY_MS (500 ms) → ensures the task wakes up
-         *         at least twice per second even if no LVGL timers are pending,
-         *         so it can process GPS events and tick the watchdog.
-         */
-        time_till_next_ms = LV_MAX(time_till_next_ms, LVGL_TASK_MIN_DELAY_MS);
-        time_till_next_ms = LV_MIN(time_till_next_ms, LVGL_TASK_MAX_DELAY_MS);
-        vTaskDelay(pdMS_TO_TICKS(time_till_next_ms));
+        // Free other task
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -1073,7 +1077,7 @@ static void ui_lvgl_task(void *arg)
  * @brief Serial debug task – mirrors GPS events to the UART console.
  *
  * Enabled only when DEBUG_TASK = 1. Receives the same notifications as
- * ui_lvgl_task but only logs to ESP_LOGI; does not touch LVGL.
+ * ui_task but only logs to ESP_LOGI; does not touch LVGL.
  *
  * RECOMMENDATION: Disable in production builds (DEBUG_TASK 0) to recover
  * ~2 KB of task stack and eliminate serial log overhead at runtime.
@@ -1088,7 +1092,6 @@ static void debug_task(void *arg)
     while (1)
     {
         xTaskNotifyWait(0, 0xFFFFFFFF, &events, portMAX_DELAY);
-
         if (events & EVT_GPS_UPDATE)
         {
             gps_read_latest(&d);
@@ -1096,16 +1099,18 @@ static void debug_task(void *arg)
                 continue;
             last_seq = d.seq;
             print_gps_data(&d);
+            UBaseType_t gps_stack = uxTaskGetStackHighWaterMark(gps_task_handle);
+            UBaseType_t ui_stack = uxTaskGetStackHighWaterMark(ui_task_handle);
+            UBaseType_t rtc_stack = uxTaskGetStackHighWaterMark(rtc_task_handle);
+            UBaseType_t lvgl_stack = uxTaskGetStackHighWaterMark(lvgl_task_handle);
+            ESP_LOGI(TAG, "Free GPS stack in bytes: %u", gps_stack);
+            ESP_LOGI(TAG, "Free UI stack in bytes: %u", ui_stack);
+            ESP_LOGI(TAG, "Free RTC stack in bytes: %u", rtc_stack);
+            ESP_LOGI(TAG, "Free LVGL stack in bytes: %u", lvgl_stack);
         }
         if (events & EVT_RTC_SYNC_DONE)
         {
             ESP_LOGI(TAG, "RTC synced");
-            UBaseType_t gps_stack = uxTaskGetStackHighWaterMark(gps_task_handle);
-            UBaseType_t ui_stack = uxTaskGetStackHighWaterMark(ui_lvgl_task_handle);
-            UBaseType_t rtc_stack = uxTaskGetStackHighWaterMark(rtc_task_handle);
-            ESP_LOGI(TAG, "Free GPS stack in bytes: %u", gps_stack);
-            ESP_LOGI(TAG, "Free UI stack in bytes: %u", ui_stack);
-            ESP_LOGI(TAG, "Free RTC stack in bytes: %u", rtc_stack);
         }
     }
 }
@@ -1308,16 +1313,16 @@ void app_main(void)
     gps_uart_init();
 
     /* --- FreeRTOS tasks ---------------------------------------------------- */
-    /*
-     * Priority ladder (higher number = higher priority):
-     *   gps_task      : 6  – must service UART quickly to avoid ring-buffer overflow
-     *   rtc_sync_task : 5  – lightweight; only runs when GPS fix is valid
-     *   ui_lvgl_task  : 5  – rendering; same priority as rtc keeps round-robin fair
-     *
-     * RECOMMENDATION: If UART overflows are observed at high GPS baud rates,
-     * raise gps_task priority to 7.
-     */
-    xTaskCreatePinnedToCore(ui_lvgl_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &ui_lvgl_task_handle, 1);
+    //  * Task pinning:
+    //  *   lvgl_port_task và ui_task chạy trên core 1 để tách biệt rendering
+    //  *   khỏi I/O. gps_task và rtc_sync_task chạy trên core 0 để xử lý UART
+    //  *   và RTC độc lập với render loop. Double-buffer + atomic swap đảm bảo
+    //  *   handoff an toàn giữa hai core.
+    //  *
+    //  *   Core 0: gps_task (priority 6), rtc_sync_task (priority 5)
+    //  *   Core 1: lvgl_port_task (priority 5), ui_task (priority 5), debug_task (priority 5)
+    xTaskCreatePinnedToCore(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle, 1);
+    xTaskCreatePinnedToCore(ui_task, "LVGL", 6144, NULL, 5, &ui_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
