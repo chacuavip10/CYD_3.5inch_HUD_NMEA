@@ -209,6 +209,8 @@ static inline void gps_read_latest(gps_data_t *out)
 /*                              ODOMETER                                      */
 /* ========================================================================== */
 /* --- Odometer & EMA Configuration --- */
+#define MIN_ODO_SPEED 2.0f
+#define MIN_ODO_HDOP 3.0f
 static double g_odometer_m = 0.0;    // Tổng quãng đường tính bằng mét
 static float g_ema_speed_kmh = 0.0f; // Vận tốc sau khi lọc EMA
 static float g_ema_alpha = 0.3f;     // Hệ số lọc (0.1 - 0.5), càng nhỏ càng mượt nhưng càng trễ
@@ -247,7 +249,7 @@ static void update_odometer_ema(float current_speed_kmh, bool is_valid, bool res
     g_ema_speed_kmh = (g_ema_alpha * current_speed_kmh) + ((1.0f - g_ema_alpha) * g_ema_speed_kmh);
 
     // Cộng dồn Odometer (chỉ cộng khi vận tốc đủ lớn để lọc nhiễu)
-    if (g_ema_speed_kmh > 0.8f)
+    if (g_ema_speed_kmh > MIN_ODO_SPEED)
     {
         g_odometer_m += (g_ema_speed_kmh / 3.6) * delta_t_sec;
     }
@@ -701,6 +703,14 @@ static void gps_task(void *arg)
                     g_ema_speed_kmh = parser.data.valid ? parser.data.speed_kmh : 0;
                     ESP_LOGI("GPS", "EMA/Odo Reset - Syncing tick to prevent jump");
                 }
+                if (parser.data.valid)
+                {
+                    parser.data.is_moving = (g_ema_speed_kmh > MIN_ODO_SPEED);
+                }
+                else
+                {
+                    parser.data.is_moving = false;
+                }
                 /* Phục hồi: chỉ báo UI sau khi có bản tin hợp lệ, không phải khi có byte */
                 if (gps_timeout)
                 {
@@ -710,9 +720,17 @@ static void gps_task(void *arg)
 
                     xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
                     ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
+                    parser.data.is_moving = false;
                 }
-
-                update_odometer_ema(parser.data.speed_kmh, parser.data.valid, ema_need_reset);
+                if (parser.data.hdop < MIN_ODO_HDOP)
+                {
+                    update_odometer_ema(parser.data.speed_kmh, parser.data.valid, ema_need_reset);
+                }
+                else
+                {
+                    // Tín hiệu quá kém hoặc No Fix -> Coi như đứng yên để bảo vệ số ODO
+                    update_odometer_ema(0, false, false);
+                }
                 parser.data.odometer_m = g_odometer_m;
                 parser.data.valid_changed = (parser.data.valid != last_valid);
                 parser.data.signal_level = hdop_to_level(parser.data.hdop);
@@ -1020,6 +1038,7 @@ static void ui_task(void *arg)
                 lv_obj_set_style_text_color(objects.signal_bar_icon,
                                             lv_color_hex(0xff4c4c),
                                             LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
             }
 
             /* ── EVT_GPS_RESTORED ────────────────────────────────────────── */
@@ -1037,6 +1056,19 @@ static void ui_task(void *arg)
                 gps_read_latest(&d);
                 // ESP_LOGI("UI", "ODO: %.2f m", d.odometer_m);
                 spinGps = (spinGps + 1) % frames_len;
+
+                if (d.is_moving != last_data.is_moving)
+                {
+                    if (d.is_moving)
+                    {
+                        lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+                    }
+                    else
+                    {
+                        // grey
+                        lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                    }
+                }
                 if (d.odometer_m < 1000)
                 {
                     lv_label_set_text_fmt(objects.odometer_m, "%.0f m", d.odometer_m);

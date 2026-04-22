@@ -123,10 +123,11 @@ void create_screen_src_main() {
             // odometer_m
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.odometer_m = obj;
-            lv_obj_set_pos(obj, 85, 271);
-            lv_obj_set_size(obj, 188, 32);
+            lv_obj_set_pos(obj, 118, 271);
+            lv_obj_set_size(obj, 155, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "");
         }
     }
