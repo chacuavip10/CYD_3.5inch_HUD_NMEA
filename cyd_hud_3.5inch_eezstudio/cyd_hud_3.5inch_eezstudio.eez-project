@@ -400,9 +400,9 @@
             {
               "objID": "d8c45a51-bda9-44cc-a6e8-682ef2a549a3",
               "type": "LVGLLabelWidget",
-              "left": 275,
+              "left": 301,
               "top": 271,
-              "width": 190,
+              "width": 164,
               "height": 32,
               "customInputs": [],
               "customOutputs": [],
@@ -444,7 +444,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "SAT:0",
+              "text": "NOT FIXED",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -604,6 +604,58 @@
               },
               "group": "",
               "groupIndex": 0
+            },
+            {
+              "objID": "daefe7ea-d517-43e5-a8c2-dbb68978acf6",
+              "type": "LVGLLabelWidget",
+              "left": 118,
+              "top": 271,
+              "width": 169,
+              "height": 32,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "c3fd4286-895a-4cc6-fb8b-f2f13d36977d",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "locked": false,
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "odometer_m",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "px",
+              "heightUnit": "px",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "48e6ce2d-22cd-41de-f3d4-c78ade605d26",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "jb30",
+                      "text_align": "RIGHT"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "",
+              "textType": "literal",
+              "longMode": "WRAP",
+              "recolor": false
             }
           ],
           "widgetFlags": "CLICKABLE|PRESS_LOCK|CLICK_FOCUSABLE|GESTURE_BUBBLE|SNAPPABLE|SCROLLABLE|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER",

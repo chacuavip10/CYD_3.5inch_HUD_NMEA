@@ -81,11 +81,11 @@ void create_screen_src_main() {
             // sat_num
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.sat_num = obj;
-            lv_obj_set_pos(obj, 275, 271);
-            lv_obj_set_size(obj, 190, 32);
+            lv_obj_set_pos(obj, 301, 271);
+            lv_obj_set_size(obj, 164, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "SAT:0");
+            lv_label_set_text_static(obj, "NOT FIXED");
         }
         {
             // signal_bar_icon
@@ -118,6 +118,16 @@ void create_screen_src_main() {
                     lv_label_set_text_static(obj, "+0");
                 }
             }
+        }
+        {
+            // odometer_m
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.odometer_m = obj;
+            lv_obj_set_pos(obj, 118, 271);
+            lv_obj_set_size(obj, 169, 32);
+            lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "");
         }
     }
     
@@ -235,7 +245,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 65, 22);
             lv_obj_set_size(obj, 344, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "FIX :");
+            lv_label_set_text_static(obj, "FIX : NO FIX");
         }
         {
             // hdop_info
@@ -244,7 +254,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 65, 83);
             lv_obj_set_size(obj, 344, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "HDOP:");
+            lv_label_set_text_static(obj, "HDOP: ~");
         }
         {
             // sat_info
@@ -253,7 +263,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 65, 149);
             lv_obj_set_size(obj, 344, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "SAT :");
+            lv_label_set_text_static(obj, "SAT : ~");
         }
         {
             // lat_info
@@ -262,7 +272,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 65, 207);
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "LAT :");
+            lv_label_set_text_static(obj, "LAT : ~");
         }
         {
             // long_info
@@ -271,7 +281,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 65, 264);
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "LONG:");
+            lv_label_set_text_static(obj, "LONG: ~");
         }
         {
             // gps_render_loading_indicator_1
