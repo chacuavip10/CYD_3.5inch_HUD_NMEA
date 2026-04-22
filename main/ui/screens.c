@@ -81,11 +81,11 @@ void create_screen_src_main() {
             // sat_num
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.sat_num = obj;
-            lv_obj_set_pos(obj, 301, 271);
-            lv_obj_set_size(obj, 164, 32);
+            lv_obj_set_pos(obj, 273, 271);
+            lv_obj_set_size(obj, 192, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "NOT FIXED");
+            lv_label_set_text_static(obj, "NOT FIXED!");
         }
         {
             // signal_bar_icon
@@ -123,8 +123,8 @@ void create_screen_src_main() {
             // odometer_m
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.odometer_m = obj;
-            lv_obj_set_pos(obj, 118, 271);
-            lv_obj_set_size(obj, 169, 32);
+            lv_obj_set_pos(obj, 85, 271);
+            lv_obj_set_size(obj, 188, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "");
