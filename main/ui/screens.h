@@ -27,7 +27,7 @@ typedef struct _objects_t {
     lv_obj_t *speed_unit;
     lv_obj_t *gps_render_loading_indicator;
     lv_obj_t *sat_num;
-    lv_obj_t *signal_streng;
+    lv_obj_t *signal_bar_icon;
     lv_obj_t *btn_inc;
     lv_obj_t *speed_adjust_main;
     lv_obj_t *time_prev_scr;
@@ -35,7 +35,7 @@ typedef struct _objects_t {
     lv_obj_t *hour_minute;
     lv_obj_t *date;
     lv_obj_t *second;
-    lv_obj_t *rtc_sync_icon;
+    lv_obj_t *icon_sync_rtc;
     lv_obj_t *info_prev_scr;
     lv_obj_t *info_next_scr;
     lv_obj_t *fix_info;

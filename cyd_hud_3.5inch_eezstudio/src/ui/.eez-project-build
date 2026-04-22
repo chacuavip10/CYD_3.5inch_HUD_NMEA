@@ -12,17 +12,10 @@
     "ui.c",
     "ui.h",
     "ui_font_braille30.c",
+    "ui_font_font_awesome_icon_40.c",
     "ui_font_jb150.c",
     "ui_font_jb30.c",
     "ui_font_jb61.c",
-    "ui_font_test.c",
-    "ui_image_no_signal_48px.c",
-    "ui_image_satlite_white_40px.c",
-    "ui_image_signal_ex_48px.c",
-    "ui_image_signal_good_48px.c",
-    "ui_image_signal_moderate_48px.c",
-    "ui_image_signal_poor_48px.c",
-    "ui_image_sync_48px.c",
     "vars.h"
   ]
 }

@@ -159,6 +159,13 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define LVGL_TASK_STACK_SIZE (8 * 1024)
 #define LVGL_TASK_PRIORITY 5
 
+#define SYNC_SYMBOL "\xEF\x80\xA1"
+#define SIG_NONE_SYMBOL "\xEF\x9A\x94"
+#define SIG_BAD_SYMBOL "\xEF\x9A\x91"
+#define SIG_MORDERATE_SYMBOL "\xEF\x9A\x92"
+#define SIG_GOOD_SYMBOL "\xEF\x9A\x93"
+#define SIG_EX_SYMBOL "\xEF\x9A\x90"
+
 /* ========================================================================== */
 /*                              GPS SHARED DOUBLE BUFFER                       */
 /* ========================================================================== */
@@ -250,12 +257,20 @@ static inline signal_level_t hdop_to_level(float hdop)
  * Icon lookup table indexed by signal_level_t.
  * Order must match the enum definition above.
  */
-static const void *signal_img_table[] = {
-    &img_no_signal_48px,       // SIG_NOSIGNAL
-    &img_signal_poor_48px,     // SIG_BAD
-    &img_signal_moderate_48px, // SIG_MODERATE
-    &img_signal_good_48px,     // SIG_GOOD
-    &img_signal_ex_48px        // SIG_EXCELLENT
+// static const void *signal_img_table[] = {
+//     &img_no_signal_48px,       // SIG_NOSIGNAL
+//     &img_signal_poor_48px,     // SIG_BAD
+//     &img_signal_moderate_48px, // SIG_MODERATE
+//     &img_signal_good_48px,     // SIG_GOOD
+//     &img_signal_ex_48px        // SIG_EXCELLENT
+// };
+
+static const void *signal_icon_table[] = {
+    &SIG_NONE_SYMBOL,      // SIG_NOSIGNAL
+    &SIG_BAD_SYMBOL,       // SIG_BAD
+    &SIG_MORDERATE_SYMBOL, // SIG_MODERATE
+    &SIG_GOOD_SYMBOL,      // SIG_GOOD
+    &SIG_EX_SYMBOL         // SIG_EXCELLENT
 };
 
 /* ========================================================================== */
@@ -403,19 +418,19 @@ static int current_screen = SCREEN_ID_SRC_MAIN;
  * Re-using a single timer avoids unbounded timer creation if the event fires
  * frequently (e.g. rapid RTC sync during weak signal).
  */
-static lv_timer_t *img_timer = NULL;
+static lv_timer_t *label_timer = NULL;
 
 /**
  * @brief LVGL timer callback – hides the target image after 2 seconds.
  *
  * After hiding, the timer is paused so it does not fire again until the
- * next call to ui_show_image_2s().
+ * next call to ui_show_label_2s().
  */
-static void hide_image_cb(lv_timer_t *t)
+static void hide_label_cb(lv_timer_t *t)
 {
-    lv_obj_t *img = (lv_obj_t *)lv_timer_get_user_data(t);
-    if (!lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN))
-        lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *label = (lv_obj_t *)lv_timer_get_user_data(t);
+    if (!lv_obj_has_flag(label, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
     lv_timer_pause(t);
 }
 
@@ -425,22 +440,22 @@ static void hide_image_cb(lv_timer_t *t)
  * Safe to call repeatedly; calling it while the image is already visible
  * simply resets the 2-second countdown.
  *
- * @param img  The LVGL image object to display temporarily.
+ * @param label  The LVGL image object to display temporarily.
  */
-void ui_show_image_2s(lv_obj_t *img)
+void ui_show_label_2s(lv_obj_t *label)
 {
-    if (lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN))
-        lv_obj_clear_flag(img, LV_OBJ_FLAG_HIDDEN);
+    if (lv_obj_has_flag(label, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
 
-    if (img_timer)
+    if (label_timer)
     {
-        lv_timer_set_user_data(img_timer, img);
-        lv_timer_reset(img_timer);
-        lv_timer_resume(img_timer);
+        lv_timer_set_user_data(label_timer, label);
+        lv_timer_reset(label_timer);
+        lv_timer_resume(label_timer);
     }
     else
     {
-        img_timer = lv_timer_create(hide_image_cb, 2000, img);
+        label_timer = lv_timer_create(hide_label_cb, 2000, label);
     }
 }
 
@@ -795,6 +810,9 @@ static void ui_lvgl_task(void *arg)
     lv_obj_add_event_cb(objects.info_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(objects.info_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Button callbacks registered");
+    lv_label_set_text(objects.icon_sync_rtc, SYNC_SYMBOL);
+    lv_label_set_text(objects.signal_bar_icon, SIG_NONE_SYMBOL);
+    lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
 
     while (1)
     {
@@ -818,7 +836,8 @@ static void ui_lvgl_task(void *arg)
 
             lv_label_set_text(objects.sat_num, "NO GPS");
             last_signal = SIG_NOSIGNAL;
-            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+            lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
             lv_label_set_text(objects.speed_after_adjust, "");
             if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
                 lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
@@ -942,7 +961,7 @@ static void ui_lvgl_task(void *arg)
                         {
                             ESP_LOGI(TAG, "GPS --> No Fix");
                             // Change signal bar to no_sig when gps lost fix
-                            lv_image_set_src(objects.signal_streng, signal_img_table[SIG_NOSIGNAL]);
+                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
                         }
                     }
 
@@ -966,13 +985,39 @@ static void ui_lvgl_task(void *arg)
                         lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
                         lv_label_set_text(objects.lat_info, "LAT :");
                         lv_label_set_text(objects.long_info, "LONG:");
+                        if (last_signal != SIG_NOSIGNAL)
+                        {
+                            last_signal = SIG_NOSIGNAL;
+
+                            lv_label_set_text(objects.signal_bar_icon,
+                                              signal_icon_table[SIG_NOSIGNAL]);
+
+                            lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                        lv_color_hex(0xff4c4c),
+                                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+                        }
                     }
                     else
                     {
                         if (new_signal != last_signal)
                         {
                             last_signal = new_signal;
-                            lv_image_set_src(objects.signal_streng, signal_img_table[new_signal]);
+                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[new_signal]);
+                            switch (new_signal)
+                            {
+                            case SIG_MODERATE:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xFFB300), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            case SIG_GOOD:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x8BC34A), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            case SIG_EXCELLENT:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x4CAF50), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            default: // NO_SIG & SIG_BAD
+                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                break;
+                            }
                         }
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
@@ -997,7 +1042,7 @@ static void ui_lvgl_task(void *arg)
             if (events & EVT_RTC_SYNC_DONE)
             {
                 /* Flash the RTC-sync icon for 2 seconds to acknowledge the sync. */
-                ui_show_image_2s(objects.rtc_sync_icon);
+                ui_show_label_2s(objects.icon_sync_rtc);
                 ESP_LOGI(TAG, "RTC synced – icon shown");
             }
         }
