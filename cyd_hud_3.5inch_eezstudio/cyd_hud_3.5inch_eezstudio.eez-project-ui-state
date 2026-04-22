@@ -2,8 +2,6 @@
   "navigation": {
     "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
     "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
-    "selectedGlyphObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4/glyphs/3",
-    "selectedBitmapObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/bitmaps/-1",
     "subnavigationSelectedItems": {}
   },
   "layoutModel": {
@@ -1144,12 +1142,12 @@
       "selectionBack": {
         "0": {
           "1": {},
-          "2": {},
+          "2": {
+            "$selected": true
+          },
           "3": {},
           "4": {},
-          "7": {
-            "$selected": true
-          }
+          "7": {}
         }
       },
       "transform": {
