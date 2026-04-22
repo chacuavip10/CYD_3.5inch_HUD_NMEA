@@ -645,7 +645,8 @@
                   "MAIN": {
                     "DEFAULT": {
                       "text_font": "jb30",
-                      "text_align": "RIGHT"
+                      "text_align": "RIGHT",
+                      "text_color": "#A0A0A0"
                     }
                   }
                 }

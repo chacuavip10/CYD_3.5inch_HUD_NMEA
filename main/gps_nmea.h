@@ -86,6 +86,7 @@ extern "C"
 
         /* ── Chuyển động (từ RMC) ────────────────────────────────────────────── */
         double odometer_m; /**< Odometer in met          */
+        bool is_moving;    /**speed > 0.8f          */
 
         /* ── Trạng thái ──────────────────────────────────────────────────────── */
         bool valid;         /**< true = fix hợp lệ (RMC status == 'A')    */
