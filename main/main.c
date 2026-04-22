@@ -84,12 +84,16 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define UART_READ_BUF_SZ 256                            // Single read chunk per UART polling cycle
 #define UART_READ_TIMEOUT_MS 10                         // How long to wait for each UART read attempt
 #define GPS_COM_TIMEOUT_MS 2000                         // If no GPS packet arrives within this window, declare signal lost
-#define GPS_RTC_STALE_THRESHOLD_MS (2 * 60 * 60 * 1000) // 2h
+#define GPS_RTC_STALE_THRESHOLD_MS (2 * 60 * 60 * 1000) // 2h (2 * 60 * 60 * 1000)
 
 /* --- FreeRTOS event bit flags (used with xTaskNotify) --- */
-#define EVT_GPS_UPDATE (1 << 0)       // New parsed GPS frame is ready in the double buffer
-#define EVT_RTC_SYNC_DONE (1 << 1)    // RTC was just synchronized from a valid GPS fix
-#define EVT_RTC_SYNC_REQUEST (1 << 2) // UI task → RTC task (yêu cầu sync ngay)
+#define EVT_GPS_UPDATE (1 << 0)       // gps_task → rtc_task, ui_task, dbg_task
+#define EVT_RTC_SYNC_DONE (1 << 1)    // rtc_task → ui_task, dbg_task
+#define EVT_RTC_SYNC_REQUEST (1 << 2) // gps_task → rtc_task (chỉ gps_task gửi)
+#define EVT_GPS_TIMEOUT (1 << 3)      // gps_task → ui_task (mất tín hiệu module)
+#define EVT_GPS_RESTORED (1 << 4)     // gps_task → ui_task (module phản hồi lại)
+#define EVT_RTC_STALE (1 << 5)        // gps_task → ui_task: RTC vượt ngưỡng stale
+#define EVT_RTC_NOT_STALE (1 << 6)    // gps_task → ui_task: RTC vừa được sync lại
 
 /* --- Task handles (populated at startup) --- */
 static TaskHandle_t gps_task_handle;
@@ -458,7 +462,7 @@ void ui_show_label_2s(lv_obj_t *label)
 static void btn_inc_cb(lv_event_t *e)
 {
     speed_compensation = (speed_compensation > 4) ? 0 : speed_compensation + 1;
-    ESP_LOGI(TAG, "Speed compensation: +%d", speed_compensation);
+    ESP_LOGI("UI", "Speed compensation: +%d", speed_compensation);
     lv_label_set_text_fmt(objects.speed_adjust_main, "+%d", speed_compensation);
 }
 
@@ -471,7 +475,7 @@ static void btn_next_screen_cb(lv_event_t *e)
     if (current_screen > _SCREEN_ID_LAST)
         current_screen = _SCREEN_ID_FIRST;
     loadScreen(current_screen);
-    ESP_LOGI(TAG, "Go to next screen");
+    ESP_LOGI("UI", "Go to next screen");
 }
 
 /**
@@ -483,7 +487,7 @@ static void btn_prev_screen_cb(lv_event_t *e)
     if (current_screen < _SCREEN_ID_FIRST)
         current_screen = _SCREEN_ID_LAST;
     loadScreen(current_screen);
-    ESP_LOGI(TAG, "Go to previous screen");
+    ESP_LOGI("UI", "Go to previous screen");
 }
 
 /**
@@ -626,29 +630,71 @@ static void gps_task(void *arg)
     nmea_parser_init(&parser);
     uint32_t last_seq = 0;
     static uint8_t rx_buf[UART_READ_BUF_SZ];
+    TickType_t last_parsed_tick = xTaskGetTickCount(); // Thời điểm nhận byte cuối cùng
+    TickType_t last_sync_tick = xTaskGetTickCount();   // Reset mỗi khi rtc_task sync xong
+    bool gps_timeout = false;                          // Trạng thái timeout hiện tại
+    bool last_stale = false;
+    uint32_t events = 0;
+    bool last_valid = false;
+    TickType_t last_stale_check = xTaskGetTickCount();
 
-    ESP_LOGI(TAG, "GPS task started");
+    ESP_LOGI("GPS", "GPS task started");
 
     while (1)
     {
+        /* ── Non-blocking: nhận EVT_RTC_SYNC_DONE từ rtc_task ───────────── */
+        if (xTaskNotifyWait(0, EVT_RTC_SYNC_DONE, &events, 0) == pdTRUE)
+        {
+            if (events & EVT_RTC_SYNC_DONE)
+            {
+                last_sync_tick = xTaskGetTickCount();
+                ESP_LOGI("GPS", "RTC sync done – stale timer reset");
+            }
+        }
+
         int rx_len = uart_read_bytes(GPS_UART_PORT, rx_buf, sizeof(rx_buf),
                                      pdMS_TO_TICKS(UART_READ_TIMEOUT_MS));
-
         if (rx_len > 0)
         {
             nmea_parser_feed(&parser, rx_buf, (size_t)rx_len);
+            TickType_t now = xTaskGetTickCount();
 
+            /* ── Chỉ xử lý khi parse được bản tin NMEA hoàn chỉnh mới ──────── */
             if (parser.data.seq != last_seq)
             {
+                last_parsed_tick = now;
+                /* Phục hồi: chỉ báo UI sau khi có bản tin hợp lệ, không phải khi có byte */
+                if (gps_timeout)
+                {
+                    gps_timeout = false;
+                    xTaskNotify(ui_task_handle, EVT_GPS_RESTORED, eSetBits);
+                    ESP_LOGI("GPS", "[EVT_GPS_RESTORED -> ui], GPS restored – notifying UI");
+
+                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
+                }
                 /* Write to the inactive slot, then flip the index atomically. */
                 uint8_t next = g_gps.index ^ 1;
                 g_gps.buf[next] = parser.data;
                 __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
+                /* ── No fix → Fix: request sync ngay ───────────────────────────────── */
+                bool valid_changed = (parser.data.valid != last_valid);
+                if (valid_changed && parser.data.valid)
+                {
+                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc], GPS no fix → fix, request RTC sync (seq=%lu)", parser.data.seq);
+                }
+                last_valid = parser.data.valid;
+                /* Quyết định RTC sync */
+                if (gps_rtc_should_sync(&parser.data))
+                {
+                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc] RTC sync request (seq=%lu)", parser.data.seq);
+                }
 
-                xTaskNotify(rtc_task_handle, EVT_GPS_UPDATE, eSetBits);
                 xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
 #if DEBUG_TASK
-                ESP_LOGI("DEBUG", "Event Sent from [GPS_TASK]");
+                ESP_LOGI("DEBUG", "[EVT_GPS_UPDATE -> debug]");
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
 #endif
                 last_seq = parser.data.seq;
@@ -657,63 +703,88 @@ static void gps_task(void *arg)
         else
         {
             /* No data in this window – yield to avoid starving lower-priority tasks. */
-            taskYIELD();
+            /* ── Không có bản tin mới: kiểm tra timeout ─────────────────── */
+            TickType_t now = xTaskGetTickCount();
+            if (!gps_timeout &&
+                (now - last_parsed_tick) > pdMS_TO_TICKS(GPS_COM_TIMEOUT_MS))
+            {
+                gps_timeout = true;
+                xTaskNotify(ui_task_handle, EVT_GPS_TIMEOUT, eSetBits);
+                ESP_LOGW("GPS", " [EVT_GPS_TIMEOUT -> ui] GPS timeout > %ds – notifying UI", GPS_COM_TIMEOUT_MS / 1000);
+            }
+        }
+        last_stale_check = xTaskGetTickCount();
+        /* ── Stale check: so sánh tick nội bộ, không gọi API ────────── */
+        bool is_stale = (last_stale_check - last_sync_tick) >
+                        pdMS_TO_TICKS(GPS_RTC_STALE_THRESHOLD_MS);
+        if (is_stale != last_stale)
+        {
+            last_stale = is_stale;
+            if (is_stale)
+            {
+                xTaskNotify(ui_task_handle, EVT_RTC_STALE, eSetBits);
+                ESP_LOGW("GPS", "[EVT_RTC_STALE -> ui] RTC stale – no sync for > %llums",
+                         (uint64_t)GPS_RTC_STALE_THRESHOLD_MS);
+                // Cần check gps timeout, do parser không update nếu timeout, vẫn giữ giá trị cũ
+                if ((!gps_timeout) && (parser.data.valid))
+                {
+                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc] Force RTC sync due to stale (seq=%lu)", parser.data.seq);
+                }
+            }
+            else
+            {
+                xTaskNotify(ui_task_handle, EVT_RTC_NOT_STALE, eSetBits);
+                ESP_LOGI("GPS", "[EVT_RTC_NOT_STALE -> ui] RTC no longer stale");
+            }
         }
     }
 }
 
 /**
- * @brief RTC synchronisation task.
+ * @brief Thực thi lệnh sync RTC từ gps_task.
  *
- * Blocks indefinitely on a task notification from gps_task.
- * On each wakeup it reads the latest GPS data and calls gps_rtc_should_sync()
- * to decide whether a re-sync is needed (e.g. first valid fix, or periodic
- * drift correction). If so, it syncs the ESP32 system time from the GPS UTC
- * timestamp and notifies ui_task so the UI can flash a sync icon.
+ * Task này không tự quyết định khi nào cần sync – mọi logic (should_sync,
+ * stale, force sync khi fix phục hồi) đã được gps_task xử lý. rtc_sync_task
+ * chỉ đóng vai trò executor:
  *
- * RECOMMENDATION: gps_rtc_should_sync() should enforce a minimum re-sync
- * interval (e.g. once per minute) to avoid hammering the RTC on every packet
- * while still correcting drift over long sessions.
+ *   1. Chờ EVT_RTC_SYNC_REQUEST từ gps_task (block vô thời hạn).
+ *   2. Đọc GPS data mới nhất từ double buffer.
+ *   3. Gọi gps_rtc_sync() để cập nhật system time.
+ *   4. Gửi EVT_RTC_SYNC_DONE về:
+ *        - gps_task  : reset stale timer nội bộ.
+ *        - ui_task   : flash icon sync 2 giây.
+ *        - dbg_task  : log (chỉ khi DEBUG_TASK = 1).
  */
 static void rtc_sync_task(void *arg)
 {
-    ESP_LOGI(TAG, "RTC sync task started");
+    ESP_LOGI("RTC", "RTC sync task started");
     gps_data_t d;
-    uint32_t last_seq = 0;
     uint32_t events;
-    bool should_sync_rtc = false;
 
     while (1)
     {
-        /* ── SECTION  : EVENT DISPATCH ───────────────────────────────────── */
         /*
-         * BLOCKING: consume any pending notifications
+         * Chỉ wake up khi nhận EVT_RTC_SYNC_REQUEST từ gps_task.
+         * Mọi quyết định "có nên sync không" và "stale chưa" đã được
+         * gps_task xử lý – rtc_task chỉ thực thi lệnh sync và báo lại.
          */
         if (xTaskNotifyWait(0, UINT32_MAX, &events, portMAX_DELAY) == pdTRUE)
         {
-            // reset flag
-            should_sync_rtc = false;
-            // Read lastest gps update
-            gps_read_latest(&d);
-            // Check event
             if (events & EVT_RTC_SYNC_REQUEST)
-                // Sync if got request from other task
-                should_sync_rtc = true;
-            else if (events & EVT_GPS_UPDATE)
             {
-                // New GPS sentence, normal check
-                if (d.seq != last_seq && gps_rtc_should_sync(&d))
-                    should_sync_rtc = true;
-                last_seq = d.seq;
-            }
-
-            if (should_sync_rtc)
-            {
+                gps_read_latest(&d);
                 gps_rtc_sync(&d);
+
+                /* Báo gps_task reset stale timer nội bộ */
+                xTaskNotify(gps_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
+                /* Báo ui_task flash icon sync */
                 xTaskNotify(ui_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
+                ESP_LOGI("RTC", "[EVT_RTC_SYNC_DONE -> gps, ui]");
+
 #if DEBUG_TASK
-                ESP_LOGI("DEBUG", "Event Sent from [RTC_SYNC_TASK]");
                 xTaskNotify(dbg_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
+                ESP_LOGI("DEBUG", "[RTC_SYNC_TASK -> debug]");
 #endif
             }
         }
@@ -738,7 +809,7 @@ static void rtc_sync_task(void *arg)
  */
 static void lvgl_port_task(void *arg)
 {
-    ESP_LOGI(TAG, "Starting LVGL PORT task (rendering)");
+    ESP_LOGI("LVGL", "Starting LVGL PORT task (rendering)");
     uint32_t time_till_next_ms = 0;
     while (1)
     {
@@ -757,53 +828,52 @@ static void lvgl_port_task(void *arg)
 }
 
 /**
- * @brief UI update.
+ * @brief Cập nhật giao diện LVGL theo event từ gps_task và rtc_task.
  *
- * This task is the sole caller of all LVGL APIs at runtime, which means:
- *   - No re-entrant LVGL calls are possible → the mutex is only needed to
- *     guard the brief window during app_main initialization.
- *   - lv_tick_inc() from the esp_timer ISR is safe because it only writes
- *     an atomic counter.
+ * Task này là consumer thuần tuý – không tự tính toán timeout, stale hay
+ * quyết định sync RTC. Mọi trạng thái được gps_task và rtc_task xử lý
+ * trước rồi thông báo qua xTaskNotify.
  *
  * Loop structure per iteration:
- *   1. LVGL_LOCK  ──────────────────────────────────────────────────────────
- *   3. Poll the RTC clock   – update time/date labels only when they change.
- *   4. GPS timeout check    – if no GPS packet arrived within GPS_COM_TIMEOUT_MS,
- *                             blank speed/position and switch to the NO GPS state.
- *   5. xTaskNotifyWait(0)   – non-blocking check for pending events:
- *        EVT_GPS_UPDATE → read new GPS frame, update speed/sat/position labels.
- *        EVT_RTC_SYNC_DONE   → flash the RTC-sync icon for 2 seconds.
- *   7. vTaskDelay(clamped)  – yield for lv_timer_handler's requested interval,
- *                             clamped to [MIN=5 ms, MAX=500 ms].
+ *   1. LVGL_LOCK
+ *   2. Poll RTC clock – cập nhật label giờ/phút/giây/ngày khi thay đổi.
+ *      So sánh từng trường riêng lẻ để tránh redraw không cần thiết.
+ *   3. xTaskNotifyWait(timeout = 0) – non-blocking, xử lý event:
+ *        EVT_GPS_TIMEOUT    → blank speed/position, hiện NO GPS, ẩn speed unit.
+ *        EVT_GPS_RESTORED   → khôi phục các widget bị ẩn.
+ *        EVT_GPS_UPDATE     → cập nhật speed, sat, signal icon, lat, lon.
+ *        EVT_RTC_STALE      → đổi màu đồng hồ sang xám.
+ *        EVT_RTC_NOT_STALE  → đổi màu đồng hồ về vàng.
+ *        EVT_RTC_SYNC_DONE  → flash icon sync 2 giây.
+ *   4. LVGL_UNLOCK
+ *   5. vTaskDelay(10 ms) – nhường CPU cho các task khác.
  *
- * Keeping xTaskNotifyWait() inside the lock ensures that any LVGL calls made
- * in response to events are also protected, without needing a second lock/unlock.
+ * Toàn bộ LVGL call nằm trong LVGL_LOCK/UNLOCK, kể cả xử lý event,
+ * đảm bảo không có race condition với lvgl_port_task.
  *
- * RECOMMENDATION: If more screens or widgets are added and the task stack
- * overflows, increase LVGL_TASK_STACK_SIZE and monitor watermark via
- * uxTaskGetStackHighWaterMark() in a debug build.
+ * RECOMMENDATION: Nếu thêm nhiều widget và stack overflow, tăng
+ * LVGL_TASK_STACK_SIZE và kiểm tra watermark qua
+ * uxTaskGetStackHighWaterMark() trong debug build.
  */
 static void ui_task(void *arg)
 {
-    ESP_LOGI(TAG, "UI task started");
+    ESP_LOGI("UI", "UI task started");
 
     uint32_t events;
     gps_data_t d;
     gps_data_t last_data = {};
     uint8_t spinGps = 0;
-    signal_level_t last_signal = 0xFF; /* Force icon update on first frame. */
-    uint32_t last_gps_tick = 0;
-    bool gps_timeout = false;
+    signal_level_t last_signal = 0xFF;
     local_time_t current_time = {};
     local_time_t last_time = {};
-    static bool last_rtc_stale = false;
-    last_time.valid = true; /* Prevent spurious "Waiting GPS" flash on startup. */
     char lat_buf[32];
     char lon_buf[32];
+
+    last_time.valid = true;
+
     static const char *WEEKDAY_STR[] = {
         "Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"};
 
-    /* Braille spinner frames – visible indication that the render loop is alive. */
     static const char *frames[] = {
         "⠋",
         "⠙",
@@ -818,7 +888,7 @@ static void ui_task(void *arg)
     };
     static const int frames_len = sizeof(frames) / sizeof(frames[0]);
 
-    /* Register touch button callbacks. */
+    /* Đăng ký callback các nút touch */
     lv_obj_add_event_cb(objects.btn_inc, btn_inc_cb, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(objects.main_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(objects.main_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
@@ -826,70 +896,25 @@ static void ui_task(void *arg)
     lv_obj_add_event_cb(objects.time_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(objects.info_next_scr, btn_next_screen_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(objects.info_prev_scr, btn_prev_screen_cb, LV_EVENT_CLICKED, NULL);
-    ESP_LOGI(TAG, "Button callbacks registered");
+    ESP_LOGI("UI", "Button callbacks registered");
+
+    /* Khởi tạo icon mặc định */
     lv_label_set_text(objects.icon_sync_rtc, SYNC_SYMBOL);
     lv_label_set_text(objects.signal_bar_icon, SIG_NONE_SYMBOL);
-    lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                lv_color_hex(0xff4c4c),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
 
     while (1)
     {
         LVGL_LOCK();
 
-        uint32_t now = lv_tick_get();
-
-        /* ── SECTION 1: GPS COMMUNICATION TIMEOUT CHECK ─────────────────── */
-
+        /* ── SECTION 1: RTC CLOCK DISPLAY ───────────────────────────────── */
         /*
-         * If no GPS sentence has arrived within GPS_COM_TIMEOUT_MS, the module
-         * may be unpowered, physically disconnected, or obstructed. Blank all
-         * GPS-derived fields and reset the signal icon to NO SIGNAL so the user
-         * is never shown stale data.
-         */
-        if (!gps_timeout && (now - last_gps_tick > GPS_COM_TIMEOUT_MS))
-        {
-            gps_timeout = true;
-            ESP_LOGW(TAG, "GPS timeout >%ds", GPS_COM_TIMEOUT_MS / 1000);
-
-            lv_label_set_text(objects.sat_num, "NO GPS");
-            last_signal = SIG_NOSIGNAL;
-            lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
-            lv_label_set_text(objects.speed_after_adjust, "");
-            if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
-                lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
-
-            /* Info screen fallback labels */
-            lv_label_set_text(objects.fix_info, "NO GPS");
-            lv_label_set_text(objects.sat_info, "SAT : ");
-            lv_label_set_text(objects.hdop_info, "HDOP: ");
-            lv_label_set_text(objects.lat_info, "LAT : ");
-            lv_label_set_text(objects.long_info, "LONG: ");
-        }
-
-        /* ── SECTION 2: RTC CLOCK DISPLAY ───────────────────────────────── */
-        /*
-         * Read the local time from the RTC module on every loop iteration so
-         * the clock display updates every second even when no new GPS packet
-         * has arrived (the RTC free-runs between GPS syncs).
-         *
-         * compare_hh_mm_ss() guards against redundant label writes.
+         * Poll RTC mỗi vòng để đồng hồ chạy liên tục kể cả khi không có
+         * GPS packet mới. So sánh từng trường riêng để tránh redraw thừa.
          */
         gps_rtc_get_local_time(&current_time);
-        bool is_stale = gps_rtc_is_stale(GPS_RTC_STALE_THRESHOLD_MS);
-        // ⭐ stale change (chỉ update khi đổi trạng thái)
-        if (is_stale != last_rtc_stale)
-        {
-            if (is_stale)
-            {
-                lv_obj_set_style_text_color(objects.hour_minute, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
-            }
-            else
-            {
-                lv_obj_set_style_text_color(objects.hour_minute, lv_color_hex(0xffbe00), LV_PART_MAIN | LV_STATE_DEFAULT);
-            }
-
-            last_rtc_stale = is_stale;
-        }
 
         if (current_time.valid != last_time.valid)
         {
@@ -900,7 +925,8 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.date, "Waiting GPS");
             }
             else
-            { // force update toàn bộ
+            {
+                /* Force redraw toàn bộ lần đầu có valid time */
                 last_time.hour = -1;
                 last_time.minute = -1;
                 last_time.second = -1;
@@ -911,87 +937,77 @@ static void ui_task(void *arg)
         if (current_time.valid)
         {
             if (!compare_hh_mm(&current_time, &last_time))
-            {
                 lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d",
                                       current_time.hour, current_time.minute);
-            }
+
             if (!compare_ss(&current_time, &last_time))
-            {
                 lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
-            }
+
             if (!compare_dd(&current_time, &last_time))
-            {
-                lv_label_set_text_fmt(objects.date, "%s, %02d/%02d/%04d", WEEKDAY_STR[current_time.week_day],
+                lv_label_set_text_fmt(objects.date, "%s, %02d/%02d/%04d",
+                                      WEEKDAY_STR[current_time.week_day],
                                       current_time.day, current_time.month, current_time.year);
-            }
         }
 
         last_time = current_time;
 
-        /* ── SECTION 3: EVENT DISPATCH ──────────────────────────────────── */
-        /*
-         * Non-blocking poll (timeout = 0): consume any pending notifications
-         * while still holding the LVGL mutex so LVGL widget updates inside
-         * the event handlers are automatically serialised.
-         */
+        /* ── SECTION 2: EVENT DISPATCH ───────────────────────────────────── */
         if (xTaskNotifyWait(0, UINT32_MAX, &events, 0) == pdTRUE)
         {
-            /* ── EVT_GPS_UPDATE ─────────────────────────────────────────── */
+            /* ── EVT_GPS_TIMEOUT ─────────────────────────────────────────── */
+            if (events & EVT_GPS_TIMEOUT)
+            {
+                lv_label_set_text(objects.sat_num, "NO GPS");
+                lv_label_set_text(objects.fix_info, "NO GPS");
+                lv_label_set_text(objects.sat_info, "SAT : ");
+                lv_label_set_text(objects.hdop_info, "HDOP: ");
+                lv_label_set_text(objects.lat_info, "LAT : ");
+                lv_label_set_text(objects.long_info, "LONG: ");
+                lv_label_set_text(objects.speed_after_adjust, "");
+                if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
+                    lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
+                last_signal = SIG_NOSIGNAL;
+                lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
+                lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                            lv_color_hex(0xff4c4c),
+                                            LV_PART_MAIN | LV_STATE_DEFAULT);
+            }
+
+            /* ── EVT_GPS_RESTORED ────────────────────────────────────────── */
+            if (events & EVT_GPS_RESTORED)
+            {
+                if (lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
+                    lv_obj_clear_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
+                if (lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
+                    lv_obj_clear_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
+            }
+
+            /* ── EVT_GPS_UPDATE ──────────────────────────────────────────── */
             if (events & EVT_GPS_UPDATE)
             {
-                last_gps_tick = lv_tick_get();
                 gps_read_latest(&d);
                 spinGps = (spinGps + 1) % frames_len;
 
-                /* Restore hidden UI elements when GPS signal recovers. */
-                if (gps_timeout)
-                {
-                    gps_timeout = false;
-                    ESP_LOGI(TAG, "GPS signal restored");
-                    if (lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
-                        lv_obj_clear_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
-                    if (lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
-                        lv_obj_clear_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
-                    // Sync rtc when gps restore and got valid fix
-                    if (d.valid)
-                    {
-                        xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                        ESP_LOGI(TAG, "Sync request sent to RTC Task");
-                    }
-                }
-
                 if (d.seq != last_data.seq)
                 {
-                    /* -- Fix validity change: update FIX label & signal icon -- */
                     bool valid_changed = (d.valid != last_data.valid);
-                    if (valid_changed)
+                    if (valid_changed && d.valid)
+                        ESP_LOGI("UI", "GPS --> Fix");
+                    else if (valid_changed && !d.valid)
                     {
-                        // Sync rtc when gps got fix again
-                        if (d.valid)
-                        {
-                            ESP_LOGI(TAG, "GPS --> Fix");
-                            xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                            ESP_LOGI(TAG, "Sync request sent to RTC Task");
-                        }
-                        else
-                        {
-                            ESP_LOGI(TAG, "GPS --> No Fix");
-                            // Change signal bar to no_sig when gps lost fix
-                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
-                        }
+                        ESP_LOGI("UI", "GPS --> No Fix");
+                        lv_label_set_text(objects.signal_bar_icon,
+                                          signal_icon_table[SIG_NOSIGNAL]);
                     }
 
-                    /* -- Signal strength icon (only redrawn when level changes) -- */
                     signal_level_t new_signal = hdop_to_level(d.hdop);
 
-                    /* -- Speed: round half-up, apply compensation, floor at 0 -- */
                     int speed_kmh = (int)(d.speed_kmh + 0.5f);
                     if (speed_kmh < 1)
                         speed_kmh = 0;
                     else
                         speed_kmh += speed_compensation;
 
-                    /* -- Update widgets based on fix validity -- */
                     if (!d.valid)
                     {
                         lv_label_set_text(objects.speed_after_adjust, "");
@@ -1004,10 +1020,8 @@ static void ui_task(void *arg)
                         if (last_signal != SIG_NOSIGNAL)
                         {
                             last_signal = SIG_NOSIGNAL;
-
                             lv_label_set_text(objects.signal_bar_icon,
                                               signal_icon_table[SIG_NOSIGNAL]);
-
                             lv_obj_set_style_text_color(objects.signal_bar_icon,
                                                         lv_color_hex(0xff4c4c),
                                                         LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1018,23 +1032,33 @@ static void ui_task(void *arg)
                         if (new_signal != last_signal)
                         {
                             last_signal = new_signal;
-                            lv_label_set_text(objects.signal_bar_icon, signal_icon_table[new_signal]);
+                            lv_label_set_text(objects.signal_bar_icon,
+                                              signal_icon_table[new_signal]);
                             switch (new_signal)
                             {
                             case SIG_MODERATE:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xFFB300), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                            lv_color_hex(0xFFB300),
+                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
                                 break;
                             case SIG_GOOD:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x8BC34A), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                            lv_color_hex(0x8BC34A),
+                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
                                 break;
                             case SIG_EXCELLENT:
-                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0x4CAF50), LV_PART_MAIN | LV_STATE_DEFAULT);
+                                lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                            lv_color_hex(0x4CAF50),
+                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
                                 break;
-                            default: // NO_SIG & SIG_BAD
-                                lv_obj_set_style_text_color(objects.signal_bar_icon, lv_color_hex(0xff4c4c), LV_PART_MAIN | LV_STATE_DEFAULT);
+                            default:
+                                lv_obj_set_style_text_color(objects.signal_bar_icon,
+                                                            lv_color_hex(0xff4c4c),
+                                                            LV_PART_MAIN | LV_STATE_DEFAULT);
                                 break;
                             }
                         }
+
                         lv_label_set_text_fmt(objects.speed_after_adjust, "%d", speed_kmh);
                         lv_label_set_text_fmt(objects.sat_num, "SAT: %d", d.satellites);
                         lv_label_set_text(objects.fix_info, "FIX : YES");
@@ -1046,7 +1070,6 @@ static void ui_task(void *arg)
                         lv_label_set_text(objects.long_info, lon_buf);
                     }
 
-                    /* Spinner advances on every new GPS frame. */
                     lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
                     lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
 
@@ -1054,17 +1077,32 @@ static void ui_task(void *arg)
                 }
             }
 
-            /* ── EVT_RTC_SYNC_DONE ───────────────────────────────────────────── */
+            /* ── EVT_RTC_STALE ───────────────────────────────────────────── */
+            if (events & EVT_RTC_STALE)
+            {
+                lv_obj_set_style_text_color(objects.hour_minute,
+                                            lv_color_hex(0xa0a0a0),
+                                            LV_PART_MAIN | LV_STATE_DEFAULT);
+            }
+
+            /* ── EVT_RTC_NOT_STALE ───────────────────────────────────────── */
+            if (events & EVT_RTC_NOT_STALE)
+            {
+                lv_obj_set_style_text_color(objects.hour_minute,
+                                            lv_color_hex(0xffbe00),
+                                            LV_PART_MAIN | LV_STATE_DEFAULT);
+            }
+
+            /* ── EVT_RTC_SYNC_DONE ───────────────────────────────────────── */
             if (events & EVT_RTC_SYNC_DONE)
             {
-                /* Flash the RTC-sync icon for 2 seconds to acknowledge the sync. */
                 ui_show_label_2s(objects.icon_sync_rtc);
-                ESP_LOGI(TAG, "RTC synced – icon shown");
+                ESP_LOGI("UI", "RTC synced – icon shown");
             }
         }
+
         LVGL_UNLOCK();
-        // Free other task
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
@@ -1084,7 +1122,7 @@ static void ui_task(void *arg)
  */
 static void debug_task(void *arg)
 {
-    ESP_LOGI(TAG, "Start debug task");
+    ESP_LOGI("DEBUG", "Start debug task");
     uint32_t events;
     gps_data_t d;
     uint32_t last_seq = 0;
@@ -1103,14 +1141,14 @@ static void debug_task(void *arg)
             UBaseType_t ui_stack = uxTaskGetStackHighWaterMark(ui_task_handle);
             UBaseType_t rtc_stack = uxTaskGetStackHighWaterMark(rtc_task_handle);
             UBaseType_t lvgl_stack = uxTaskGetStackHighWaterMark(lvgl_task_handle);
-            ESP_LOGI(TAG, "Free GPS stack in bytes: %u", gps_stack);
-            ESP_LOGI(TAG, "Free UI stack in bytes: %u", ui_stack);
-            ESP_LOGI(TAG, "Free RTC stack in bytes: %u", rtc_stack);
-            ESP_LOGI(TAG, "Free LVGL stack in bytes: %u", lvgl_stack);
+            ESP_LOGI("DEBUG", "Free GPS stack in bytes: %u", gps_stack);
+            ESP_LOGI("DEBUG", "Free UI stack in bytes: %u", ui_stack);
+            ESP_LOGI("DEBUG", "Free RTC stack in bytes: %u", rtc_stack);
+            ESP_LOGI("DEBUG", "Free LVGL stack in bytes: %u", lvgl_stack);
         }
         if (events & EVT_RTC_SYNC_DONE)
         {
-            ESP_LOGI(TAG, "RTC synced");
+            ESP_LOGI("DEBUG", "[EVT_RTC_SYNC_DONE] Event received: RTC synced");
         }
     }
 }
@@ -1145,7 +1183,7 @@ static void gps_uart_init(void)
     ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT, UART_PIN_NO_CHANGE, GPS_RX_GPIO,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(GPS_UART_PORT, UART_RX_RING_BUF, 0, 0, NULL, 0));
-    ESP_LOGI(TAG, "UART%d init OK – RX=GPIO%d – %d baud",
+    ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d – %d baud",
              GPS_UART_PORT, GPS_RX_GPIO, GPS_BAUD_RATE);
 }
 
@@ -1180,8 +1218,8 @@ static void gps_uart_init(void)
  */
 void app_main(void)
 {
-    ESP_LOGI(TAG, "=== GPS HUD – ATGM336H / ESP32 ===");
-    ESP_LOGI(TAG, "IDF version: %s", esp_get_idf_version());
+    ESP_LOGI("MAIN", "=== GPS HUD – ATGM336H / ESP32 ===");
+    ESP_LOGI("MAIN", "IDF version: %s", esp_get_idf_version());
 
     /* --- LVGL mutex -------------------------------------------------------- */
     s_lvgl_mutex = xSemaphoreCreateMutex();
@@ -1321,8 +1359,8 @@ void app_main(void)
     //  *
     //  *   Core 0: gps_task (priority 6), rtc_sync_task (priority 5)
     //  *   Core 1: lvgl_port_task (priority 5), ui_task (priority 5), debug_task (priority 5)
-    xTaskCreatePinnedToCore(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle, 1);
-    xTaskCreatePinnedToCore(ui_task, "LVGL", 6144, NULL, 5, &ui_task_handle, 1);
+    xTaskCreatePinnedToCore(lvgl_port_task, "lvgl_port", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle, 1);
+    xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, NULL, 5, &ui_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
