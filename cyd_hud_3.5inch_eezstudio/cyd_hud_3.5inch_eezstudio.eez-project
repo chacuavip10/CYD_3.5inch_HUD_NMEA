@@ -1296,7 +1296,7 @@
               "type": "LVGLLabelWidget",
               "left": 65,
               "top": 149,
-              "width": 344,
+              "width": 147,
               "height": 32,
               "customInputs": [],
               "customOutputs": [],
@@ -1337,7 +1337,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "SAT : ~",
+              "text": "SAT : 99",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1492,6 +1492,57 @@
               "group": "",
               "groupIndex": 0,
               "text": "⠏",
+              "textType": "literal",
+              "longMode": "WRAP",
+              "recolor": false
+            },
+            {
+              "objID": "a468b634-0ceb-449a-dd6a-b9324408d9f3",
+              "type": "LVGLLabelWidget",
+              "left": 223,
+              "top": 149,
+              "width": 226,
+              "height": 32,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "f6271cfb-2458-4474-e0f9-80c885b8950d",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "locked": false,
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "moving",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "px",
+              "heightUnit": "px",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "8573b575-82cc-44dc-b948-f89ecc000cf9",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "jb30"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "IS_MOVING: ~",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false

@@ -1031,6 +1031,7 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.lat_info, "LAT : ");
                 lv_label_set_text(objects.long_info, "LONG: ");
                 lv_label_set_text(objects.speed_after_adjust, "");
+                lv_label_set_text(objects.moving, "IS_MOVING: ~");
                 if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
                     lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
                 last_data.signal_level = SIG_NOSIGNAL;
@@ -1039,6 +1040,7 @@ static void ui_task(void *arg)
                                             lv_color_hex(0xff4c4c),
                                             LV_PART_MAIN | LV_STATE_DEFAULT);
                 lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
             }
 
             /* ── EVT_GPS_RESTORED ────────────────────────────────────────── */
@@ -1048,6 +1050,15 @@ static void ui_task(void *arg)
                     lv_obj_clear_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
                 if (lv_obj_has_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN))
                     lv_obj_clear_flag(objects.sat_num, LV_OBJ_FLAG_HIDDEN);
+                gps_read_latest(&d);
+                if (d.valid)
+                {
+                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+                }
+                else
+                {
+                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                }
             }
 
             /* ── EVT_GPS_UPDATE ──────────────────────────────────────────── */
@@ -1062,11 +1073,13 @@ static void ui_task(void *arg)
                     if (d.is_moving)
                     {
                         lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+                        lv_label_set_text(objects.moving, "IS_MOVING: 1");
                     }
                     else
                     {
                         // grey
                         lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                        lv_label_set_text(objects.moving, "IS_MOVING: 0");
                     }
                 }
                 if (d.odometer_m < 1000)
@@ -1079,10 +1092,14 @@ static void ui_task(void *arg)
                 }
 
                 if (d.valid_changed && d.valid)
+                {
+                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
                     ESP_LOGI("UI", "GPS --> Fix");
+                }
                 else if (d.valid_changed && !d.valid)
                 {
                     ESP_LOGI("UI", "GPS --> No Fix");
+                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_label_set_text(objects.signal_bar_icon,
                                       signal_icon_table[SIG_NOSIGNAL]);
                 }
