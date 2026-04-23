@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
     "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
     "subnavigationSelectedItems": {}
   },
@@ -210,15 +210,16 @@
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
-                  "name": "src_main",
+                  "name": "src_info",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -238,8 +239,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -1145,12 +1145,13 @@
       "selectionBack": {
         "0": {
           "1": {},
-          "2": {
-            "$selected": true
-          },
+          "2": {},
           "3": {},
           "4": {},
-          "7": {}
+          "7": {},
+          "8": {
+            "$selected": true
+          }
         }
       },
       "transform": {

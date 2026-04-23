@@ -81,8 +81,8 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define PIN_NUM_BK_LIGHT GPIO_NUM_27
 #define GPS_BAUD_RATE 115200
 #define UART_RX_RING_BUF 2048                           // Ring buffer size for incoming NMEA data
-#define UART_READ_BUF_SZ 256                            // Single read chunk per UART polling cycle
-#define UART_READ_TIMEOUT_MS 10                         // How long to wait for each UART read attempt
+#define UART_READ_BUF_SZ 1024                           // Single read chunk per UART polling cycle
+#define UART_READ_TIMEOUT_MS 40                         // How long to wait for each UART read attempt, should be < 1/2 * rate, gps 10hz -> < 50ms
 #define GPS_COM_TIMEOUT_MS 2000                         // If no GPS packet arrives within this window, declare signal lost
 #define GPS_RTC_STALE_THRESHOLD_MS (2 * 60 * 60 * 1000) // 2h (2 * 60 * 60 * 1000)
 
@@ -145,10 +145,10 @@ static SemaphoreHandle_t s_lvgl_mutex;
  * number of partial-flush calls per frame and can improve perceived smoothness
  * at the cost of extra PSRAM/DRAM usage.
  */
-#define LVGL_DRAW_BUF_LINES 60
+#define LVGL_DRAW_BUF_LINES 100
 #define LVGL_TICK_PERIOD_MS 1      // lv_tick_inc() is called every 1 ms via esp_timer ISR
 #define LVGL_TASK_MAX_DELAY_MS 500 // Upper bound on vTaskDelay between lv_timer_handler() calls
-#define LVGL_TASK_MIN_DELAY_MS 5   // Lower bound – prevents busy-waiting the CPU
+#define LVGL_TASK_MIN_DELAY_MS 10  // Lower bound – prevents busy-waiting the CPU
 #define LVGL_TASK_STACK_SIZE (8 * 1024)
 #define LVGL_TASK_PRIORITY 5
 
@@ -673,7 +673,7 @@ static void gps_task(void *arg)
     while (1)
     {
         /* ── Non-blocking: nhận EVT_RTC_SYNC_DONE từ rtc_task ───────────── */
-        if (xTaskNotifyWait(0, EVT_RTC_SYNC_DONE, &events, 0) == pdTRUE)
+        if (xTaskNotifyWait(0, UINT32_MAX, &events, 0) == pdTRUE)
         {
             if (events & EVT_RTC_SYNC_DONE)
             {
@@ -758,6 +758,7 @@ static void gps_task(void *arg)
                 }
 
                 xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
+                // ESP_LOGI("GPS", "[EVT_GPS_UPDATE -> ui] New GPS sentence");
 #if DEBUG_TASK
                 ESP_LOGI("DEBUG", "[EVT_GPS_UPDATE -> debug]");
                 xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
