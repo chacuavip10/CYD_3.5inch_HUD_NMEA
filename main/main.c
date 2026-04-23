@@ -717,9 +717,11 @@ static void gps_task(void *arg)
                     gps_timeout = false;
                     xTaskNotify(ui_task_handle, EVT_GPS_RESTORED, eSetBits);
                     ESP_LOGI("GPS", "[EVT_GPS_RESTORED -> ui], GPS restored – notifying UI");
-
-                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
+                    if (parser.data.valid)
+                    {
+                        xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                        ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
+                    }
                     parser.data.is_moving = false;
                 }
                 if (parser.data.hdop < MIN_ODO_HDOP)
