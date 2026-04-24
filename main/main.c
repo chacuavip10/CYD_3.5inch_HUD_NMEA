@@ -94,6 +94,11 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define EVT_GPS_RESTORED (1 << 4)     // gps_task → ui_task (module phản hồi lại)
 #define EVT_RTC_STALE (1 << 5)        // gps_task → ui_task: RTC vượt ngưỡng stale
 #define EVT_RTC_NOT_STALE (1 << 6)    // gps_task → ui_task: RTC vừa được sync lại
+#define EVT_IS_MOVING_TO_MOVE (1 << 7)
+#define EVT_IS_MOVING_TO_STOP (1 << 8)
+#define EVT_VALID_CHANGE_TO_VALID (1 << 9)
+#define EVT_VALID_CHANGE_TO_INVALID (1 << 10)
+#define EVT_SIGNAL_CHANGE (1 << 11)
 
 /* --- Task handles (populated at startup) --- */
 static TaskHandle_t gps_task_handle;
@@ -658,22 +663,24 @@ static void gps_task(void *arg)
 {
     nmea_parser_t parser;
     nmea_parser_init(&parser);
-    uint32_t last_seq = 0;
+    gps_data_t last_data = {0};
     static uint8_t rx_buf[UART_READ_BUF_SZ];
     TickType_t last_parsed_tick = xTaskGetTickCount(); // Thời điểm nhận byte cuối cùng
     TickType_t last_sync_tick = xTaskGetTickCount();   // Reset mỗi khi rtc_task sync xong
     bool gps_timeout = false;                          // Trạng thái timeout hiện tại
     bool last_stale = false;
     uint32_t events = 0;
-    bool last_valid = false;
     TickType_t last_stale_check = xTaskGetTickCount();
 
     ESP_LOGI("GPS", "GPS task started");
 
     while (1)
     {
+        uint32_t ui_evt_bits = 0;  // reset noti bit
+        uint32_t rtc_evt_bits = 0; // reset noti bit
+        uint32_t dbg_evt_bits = 0; // reset noti bit
         /* ── Non-blocking: nhận EVT_RTC_SYNC_DONE từ rtc_task ───────────── */
-        if (xTaskNotifyWait(0, UINT32_MAX, &events, 0) == pdTRUE)
+        if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE)
         {
             if (events & EVT_RTC_SYNC_DONE)
             {
@@ -690,11 +697,13 @@ static void gps_task(void *arg)
             TickType_t now = xTaskGetTickCount();
 
             /* ── Chỉ xử lý khi parse được bản tin NMEA hoàn chỉnh mới ──────── */
-            if (parser.data.seq != last_seq)
+            if (parser.data.seq != last_data.seq)
             {
                 last_parsed_tick = now;
+                /* CHECK EMA Reset */
+                bool ema_need_reset = gps_timeout || (parser.data.valid && !last_data.valid);
+
                 // Nếu vừa hồi phục từ timeout hoặc vừa có fix, hãy reset EMA
-                bool ema_need_reset = gps_timeout || (parser.data.valid && !last_valid);
                 if (ema_need_reset)
                 {
                     // QUAN TRỌNG: Đồng bộ lại tick để delta_t của lần tính tới sẽ bắt đầu từ điểm này
@@ -703,27 +712,8 @@ static void gps_task(void *arg)
                     g_ema_speed_kmh = parser.data.valid ? parser.data.speed_kmh : 0;
                     ESP_LOGI("GPS", "EMA/Odo Reset - Syncing tick to prevent jump");
                 }
-                if (parser.data.valid)
-                {
-                    parser.data.is_moving = (g_ema_speed_kmh > MIN_ODO_SPEED);
-                }
-                else
-                {
-                    parser.data.is_moving = false;
-                }
-                /* Phục hồi: chỉ báo UI sau khi có bản tin hợp lệ, không phải khi có byte */
-                if (gps_timeout)
-                {
-                    gps_timeout = false;
-                    xTaskNotify(ui_task_handle, EVT_GPS_RESTORED, eSetBits);
-                    ESP_LOGI("GPS", "[EVT_GPS_RESTORED -> ui], GPS restored – notifying UI");
-                    if (parser.data.valid)
-                    {
-                        xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                        ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
-                    }
-                    parser.data.is_moving = false;
-                }
+
+                /* Cập nhật odometer và EMA speed */
                 if (parser.data.hdop < MIN_ODO_HDOP)
                 {
                     update_odometer_ema(parser.data.speed_kmh, parser.data.valid, ema_need_reset);
@@ -733,39 +723,71 @@ static void gps_task(void *arg)
                     // Tín hiệu quá kém hoặc No Fix -> Coi như đứng yên để bảo vệ số ODO
                     update_odometer_ema(0, false, false);
                 }
+
+                /* Gán các trường dẫn xuất */
+                parser.data.is_moving = parser.data.valid && (g_ema_speed_kmh > MIN_ODO_SPEED);
                 parser.data.odometer_m = g_odometer_m;
-                parser.data.valid_changed = (parser.data.valid != last_valid);
-                parser.data.signal_level = hdop_to_level(parser.data.hdop);
-                if (!parser.data.valid)
+                parser.data.valid_changed = (parser.data.valid != last_data.valid);
+                parser.data.signal_level = parser.data.valid ? hdop_to_level(parser.data.hdop) : SIG_NOSIGNAL;
+
+                /* Sinh sự kiện thay đổi trạng thái */
+                if (parser.data.is_moving != last_data.is_moving)
                 {
-                    parser.data.signal_level = SIG_NOSIGNAL;
+                    ui_evt_bits |= parser.data.is_moving ? EVT_IS_MOVING_TO_MOVE : EVT_IS_MOVING_TO_STOP;
                 }
+
+                if (parser.data.valid_changed)
+                {
+                    ui_evt_bits |= parser.data.valid ? EVT_VALID_CHANGE_TO_VALID : EVT_VALID_CHANGE_TO_INVALID;
+                }
+
+                if (parser.data.signal_level != last_data.signal_level)
+                {
+                    ui_evt_bits |= EVT_SIGNAL_CHANGE;
+                }
+
+                /* Phục hồi: chỉ báo UI sau khi có bản tin hợp lệ, không phải khi có byte */
+                if (gps_timeout)
+                {
+                    gps_timeout = false;
+                    ui_evt_bits |= EVT_GPS_RESTORED;
+                    ESP_LOGI("GPS", "[EVT_GPS_RESTORED -> ui], GPS restored – notifying UI");
+                    if (parser.data.valid)
+                    {
+                        rtc_evt_bits |= EVT_RTC_SYNC_REQUEST;
+                        ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc]");
+                    }
+                    parser.data.is_moving = false; // set is_moving -> false để tránh edge case khi GPS fix trở lại, data cũ vẫn là moving - > moving dẫn đến không đổi style ODO, sẽ tự fix khi có bản tin GPS tiếp theo
+                }
+
+                /* Quyết định đồng bộ RTC (chỉ một nơi) */
+                bool need_rtc_sync = false;
+                if (parser.data.valid_changed && parser.data.valid)
+                {
+                    need_rtc_sync = true;
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc], GPS no fix → fix, request RTC sync (seq=%lu)", parser.data.seq);
+                }
+                else if (gps_rtc_should_sync(&parser.data))
+                {
+                    need_rtc_sync = true;
+                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc] RTC sync request (seq=%lu)", parser.data.seq);
+                }
+                if (need_rtc_sync)
+                    rtc_evt_bits |= EVT_RTC_SYNC_REQUEST;
+
                 /* Write to the inactive slot, then flip the index atomically. */
                 uint8_t next = g_gps.index ^ 1;
                 g_gps.buf[next] = parser.data;
                 __atomic_store_n(&g_gps.index, next, __ATOMIC_RELEASE);
-                /* ── No fix → Fix: request sync ngay ───────────────────────────────── */
-                if (parser.data.valid_changed && parser.data.valid)
-                {
-                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc], GPS no fix → fix, request RTC sync (seq=%lu)", parser.data.seq);
-                }
-                last_valid = parser.data.valid;
 
-                /* Quyết định RTC sync */
-                if (gps_rtc_should_sync(&parser.data))
-                {
-                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
-                    ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc] RTC sync request (seq=%lu)", parser.data.seq);
-                }
+                ui_evt_bits |= EVT_GPS_UPDATE;
 
-                xTaskNotify(ui_task_handle, EVT_GPS_UPDATE, eSetBits);
                 // ESP_LOGI("GPS", "[EVT_GPS_UPDATE -> ui] New GPS sentence");
 #if DEBUG_TASK
                 ESP_LOGI("DEBUG", "[EVT_GPS_UPDATE -> debug]");
-                xTaskNotify(dbg_task_handle, EVT_GPS_UPDATE, eSetBits);
+                dbg_evt_bits |= EVT_GPS_UPDATE;
 #endif
-                last_seq = parser.data.seq;
+                last_data = parser.data;
             }
         }
         else
@@ -777,7 +799,7 @@ static void gps_task(void *arg)
                 (now - last_parsed_tick) > pdMS_TO_TICKS(GPS_COM_TIMEOUT_MS))
             {
                 gps_timeout = true;
-                xTaskNotify(ui_task_handle, EVT_GPS_TIMEOUT, eSetBits);
+                ui_evt_bits |= EVT_GPS_TIMEOUT;
                 ESP_LOGW("GPS", " [EVT_GPS_TIMEOUT -> ui] GPS timeout > %ds – notifying UI", GPS_COM_TIMEOUT_MS / 1000);
                 g_last_odo_tick = 0; // Reset tick để không tính quãng đường nhảy vọt khi có tín hiệu lại
                 g_ema_speed_kmh = 0;
@@ -792,22 +814,37 @@ static void gps_task(void *arg)
             last_stale = is_stale;
             if (is_stale)
             {
-                xTaskNotify(ui_task_handle, EVT_RTC_STALE, eSetBits);
+                ui_evt_bits |= EVT_RTC_STALE;
                 ESP_LOGW("GPS", "[EVT_RTC_STALE -> ui] RTC stale – no sync for > %llums",
                          (uint64_t)GPS_RTC_STALE_THRESHOLD_MS);
                 // Cần check gps timeout, do parser không update nếu timeout, vẫn giữ giá trị cũ
                 if ((!gps_timeout) && (parser.data.valid))
                 {
-                    xTaskNotify(rtc_task_handle, EVT_RTC_SYNC_REQUEST, eSetBits);
+                    rtc_evt_bits |= EVT_RTC_SYNC_REQUEST;
                     ESP_LOGI("GPS", "[EVT_RTC_SYNC_REQUEST -> rtc] Force RTC sync due to stale (seq=%lu)", parser.data.seq);
                 }
             }
             else
             {
-                xTaskNotify(ui_task_handle, EVT_RTC_NOT_STALE, eSetBits);
+                ui_evt_bits |= EVT_RTC_NOT_STALE;
                 ESP_LOGI("GPS", "[EVT_RTC_NOT_STALE -> ui] RTC no longer stale");
             }
         }
+        /* ── GỬI NOTIFY TỔNG HỢP CUỐI VÒNG ───────────────────────────── */
+        if (ui_evt_bits)
+        {
+            xTaskNotify(ui_task_handle, ui_evt_bits, eSetBits);
+        }
+        if (rtc_evt_bits)
+        {
+            xTaskNotify(rtc_task_handle, rtc_evt_bits, eSetBits);
+        }
+#if DEBUG_TASK
+        if (dbg_evt_bits)
+        {
+            xTaskNotify(dbg_task_handle, dbg_evt_bits, eSetBits);
+        }
+#endif
     }
 }
 
@@ -839,7 +876,7 @@ static void rtc_sync_task(void *arg)
          * Mọi quyết định "có nên sync không" và "stale chưa" đã được
          * gps_task xử lý – rtc_task chỉ thực thi lệnh sync và báo lại.
          */
-        if (xTaskNotifyWait(0, UINT32_MAX, &events, portMAX_DELAY) == pdTRUE)
+        if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, portMAX_DELAY) == pdTRUE)
         {
             if (events & EVT_RTC_SYNC_REQUEST)
             {
@@ -931,8 +968,7 @@ static void ui_task(void *arg)
 
     uint32_t events;
     gps_data_t d;
-    gps_data_t last_data = {};
-    last_data.signal_level = 0xFF;
+    int last_data_signal_level = 0xFF;
     uint8_t spinGps = 0;
     local_time_t current_time = {};
     local_time_t last_time = {};
@@ -1022,7 +1058,7 @@ static void ui_task(void *arg)
         last_time = current_time;
 
         /* ── SECTION 2: EVENT DISPATCH ───────────────────────────────────── */
-        if (xTaskNotifyWait(0, UINT32_MAX, &events, 0) == pdTRUE)
+        if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE)
         {
             /* ── EVT_GPS_TIMEOUT ─────────────────────────────────────────── */
             if (events & EVT_GPS_TIMEOUT)
@@ -1037,7 +1073,7 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.moving, "IS_MOVING: ~");
                 if (!lv_obj_has_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN))
                     lv_obj_add_flag(objects.speed_unit, LV_OBJ_FLAG_HIDDEN);
-                last_data.signal_level = SIG_NOSIGNAL;
+                last_data_signal_level = SIG_NOSIGNAL;
                 lv_label_set_text(objects.signal_bar_icon, signal_icon_table[SIG_NOSIGNAL]);
                 lv_obj_set_style_text_color(objects.signal_bar_icon,
                                             lv_color_hex(0xff4c4c),
@@ -1063,6 +1099,34 @@ static void ui_task(void *arg)
                     lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
                 }
             }
+            /* ── EVT_IS_MOVING_CHANGE ──────────────────────────────────────────── */
+            if (events & EVT_IS_MOVING_TO_MOVE)
+            {
+                lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_label_set_text(objects.moving, "IS_MOVING: 1");
+            }
+
+            if (events & EVT_IS_MOVING_TO_STOP)
+            {
+                // grey
+                lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_label_set_text(objects.moving, "IS_MOVING: 0");
+            }
+
+            /* ── EVT_VALID_CHANGE ──────────────────────────────────────────── */
+            if (events & EVT_VALID_CHANGE_TO_VALID)
+            {
+                lv_obj_set_style_text_color(objects.second, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+                ESP_LOGI("UI", "GPS --> Fix");
+            }
+
+            if (events & EVT_VALID_CHANGE_TO_INVALID)
+            {
+                ESP_LOGI("UI", "GPS --> No Fix");
+                lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_label_set_text(objects.signal_bar_icon,
+                                  signal_icon_table[SIG_NOSIGNAL]);
+            }
 
             /* ── EVT_GPS_UPDATE ──────────────────────────────────────────── */
             if (events & EVT_GPS_UPDATE)
@@ -1070,41 +1134,13 @@ static void ui_task(void *arg)
                 gps_read_latest(&d);
                 // ESP_LOGI("UI", "ODO: %.2f m", d.odometer_m);
                 spinGps = (spinGps + 1) % frames_len;
-
-                if (d.is_moving != last_data.is_moving)
-                {
-                    if (d.is_moving)
-                    {
-                        lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-                        lv_label_set_text(objects.moving, "IS_MOVING: 1");
-                    }
-                    else
-                    {
-                        // grey
-                        lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
-                        lv_label_set_text(objects.moving, "IS_MOVING: 0");
-                    }
-                }
-                if (d.odometer_m < 1000)
+                if (d.odometer_m < 10000)
                 {
                     lv_label_set_text_fmt(objects.odometer_m, "%.0f m", d.odometer_m);
                 }
                 else
                 {
                     lv_label_set_text_fmt(objects.odometer_m, "%.1f km", d.odometer_m / 1000);
-                }
-
-                if (d.valid_changed && d.valid)
-                {
-                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-                    ESP_LOGI("UI", "GPS --> Fix");
-                }
-                else if (d.valid_changed && !d.valid)
-                {
-                    ESP_LOGI("UI", "GPS --> No Fix");
-                    lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text(objects.signal_bar_icon,
-                                      signal_icon_table[SIG_NOSIGNAL]);
                 }
 
                 int speed_kmh = (int)(d.speed_kmh + 0.5f);
@@ -1122,9 +1158,9 @@ static void ui_task(void *arg)
                     lv_label_set_text_fmt(objects.sat_info, "SAT : %d", d.satellites);
                     lv_label_set_text(objects.lat_info, "LAT :");
                     lv_label_set_text(objects.long_info, "LONG:");
-                    if (last_data.signal_level != SIG_NOSIGNAL)
+                    if (last_data_signal_level != SIG_NOSIGNAL)
                     {
-                        last_data.signal_level = SIG_NOSIGNAL;
+                        last_data_signal_level = SIG_NOSIGNAL;
                         lv_label_set_text(objects.signal_bar_icon,
                                           signal_icon_table[SIG_NOSIGNAL]);
                         lv_obj_set_style_text_color(objects.signal_bar_icon,
@@ -1134,7 +1170,7 @@ static void ui_task(void *arg)
                 }
                 else
                 {
-                    if (d.signal_level != last_data.signal_level)
+                    if (events & EVT_SIGNAL_CHANGE)
                     {
                         lv_label_set_text(objects.signal_bar_icon,
                                           signal_icon_table[d.signal_level]);
@@ -1177,7 +1213,7 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.gps_render_loading_indicator, frames[spinGps]);
                 lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
 
-                last_data = d;
+                last_data_signal_level = d.signal_level;
             }
 
             /* ── EVT_RTC_STALE ───────────────────────────────────────────── */
