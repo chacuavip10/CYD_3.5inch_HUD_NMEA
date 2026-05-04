@@ -75,11 +75,12 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 /* --- GPIO & UART --- */
 #define GPS_UART_PORT UART_NUM_2
 #define GPS_RX_GPIO GPIO_NUM_21
+#define GPS_TX_GPIO GPIO_NUM_22
 #define LED_RED GPIO_NUM_4
 #define LED_GREEN GPIO_NUM_17
 #define LED_BLUE GPIO_NUM_16
 #define PIN_NUM_BK_LIGHT GPIO_NUM_27
-#define GPS_BAUD_RATE 115200
+#define TARGET_GPS_BAUD_RATE 115200
 #define UART_RX_RING_BUF 2048                           // Ring buffer size for incoming NMEA data
 #define UART_READ_BUF_SZ 1024                           // Single read chunk per UART polling cycle
 #define UART_READ_TIMEOUT_MS 40                         // How long to wait for each UART read attempt, should be < 1/2 * rate, gps 10hz -> < 50ms. With 40ms read timeout, max GGA+RMC is 15hz, if > 15hz, reduce timeout to 10-20 ms
@@ -131,8 +132,6 @@ typedef struct
     uint32_t last_update_count; // Đếm số lần update trong khoảng thời gian
     int64_t last_rate_calc_us;  // Thời điểm tính rate gần nhất
 } event_rate_stats_t;
-
-static event_rate_stats_t g_event_rate_stats = {0};
 
 /* Double buffer cho event rate counters */
 typedef struct
@@ -371,6 +370,47 @@ static const void *signal_icon_table[] = {
     &SIG_GOOD_SYMBOL,      // SIG_GOOD
     &SIG_EX_SYMBOL         // SIG_EXCELLENT
 };
+
+/* ========================================================================== */
+/*                            NMEA CONFIG COMMAND HELPER                      */
+/* ========================================================================== */
+static char CFG_BAUDRATE_115200[] = "$PCAS01,5*19\r\n";
+static char CFG_UPDATE_RATE_1HZ[] = "$PCAS02,1000*2E\r\n";
+static char CFG_UPDATE_RATE_5HZ[] = "$PCAS02,200*1D\r\n";
+static char CFG_UPDATE_RATE_10HZ[] = "$PCAS02,100*1E\r\n";
+static char CFG_ENABLE_MESSAGE_GGA_RMC[] = "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n";
+static char CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU[] = "$PCAS04,13,13,11*29\r\n";
+static char CFG_ENABLE_CONSTELLATION_GPS_ONLY[] = "$PCAS04,1,1,1*18\r\n";
+static char CFG_ENABLE_CONSTELLATION_BEIDOU_ONLY[] = "$PCAS04,12,12,10*28\r\n";
+
+/**
+ * @brief Send NMEA command to GPS module via UART2 TX
+ *
+ * @param cmd NMEA command string (must include CR/LF termination)
+ * @param timeout_ms Timeout in milliseconds for write operation
+ * @return true if send successful, false otherwise
+ */
+static bool gps_send_command(const char *cmd, int timeout_ms)
+{
+    if (!cmd)
+        return false;
+
+    int len = strlen(cmd);
+    int written = uart_write_bytes(GPS_UART_PORT, cmd, len);
+
+    if (written == len)
+    {
+        ESP_LOGI("GPS", "Command sent: %s", cmd);
+        /* Flush TX buffer to ensure command is transmitted */
+        uart_wait_tx_done(GPS_UART_PORT, pdMS_TO_TICKS(timeout_ms));
+        return true;
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send command, written %d/%d bytes", written, len);
+        return false;
+    }
+}
 
 /* ========================================================================== */
 /*                              UTILITY FUNCTIONS                              */
@@ -726,7 +766,7 @@ static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data)
  * The `seq` counter in gps_data_t allows receivers to detect stale reads
  * without additional locking.
  *
- * RECOMMENDATION: Consider raising GPS_BAUD_RATE to 115200 (already set) and
+ * RECOMMENDATION: Consider raising TARGET_GPS_BAUD_RATE to 115200 (already set) and
  * configuring the ATGM336H to output only the NMEA sentences you actually use
  * (e.g. $GPRMC + $GPGGA) to reduce parse load.
  */
@@ -1433,7 +1473,7 @@ static void debug_task(void *arg)
 #endif
 
 /* ========================================================================== */
-/*                              HARDWARE INITIALISATION                        */
+/*                              HARDWARE INITIALISATION                       */
 /* ========================================================================== */
 
 /**
@@ -1450,7 +1490,7 @@ static void debug_task(void *arg)
 static void gps_uart_init(void)
 {
     const uart_config_t uart_cfg = {
-        .baud_rate = GPS_BAUD_RATE,
+        .baud_rate = TARGET_GPS_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -1458,11 +1498,11 @@ static void gps_uart_init(void)
         .source_clk = UART_SCLK_DEFAULT,
     };
     ESP_ERROR_CHECK(uart_param_config(GPS_UART_PORT, &uart_cfg));
-    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT, UART_PIN_NO_CHANGE, GPS_RX_GPIO,
+    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT, GPS_TX_GPIO, GPS_RX_GPIO,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(GPS_UART_PORT, UART_RX_RING_BUF, 0, 0, NULL, 0));
     ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d – %d baud",
-             GPS_UART_PORT, GPS_RX_GPIO, GPS_BAUD_RATE);
+             GPS_UART_PORT, GPS_RX_GPIO, TARGET_GPS_BAUD_RATE);
 }
 
 /* ========================================================================== */
@@ -1627,7 +1667,44 @@ void app_main(void)
     /* --- RTC module and GPS UART ------------------------------------------- */
     gps_rtc_init();
     gps_uart_init();
+    // Wait 100ms after UART INIT
+    vTaskDelay((pdMS_TO_TICKS(100)));
 
+    /* Set GPS update rate */
+    if (gps_send_command(CFG_UPDATE_RATE_10HZ, 100))
+    {
+        ESP_LOGI("GPS", "Set update rate to 10hz");
+        /* Wait for GPS to apply new settings */
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send configuration command: Set update rate to 10hz");
+    }
+
+    /* Set GPS sentences */
+    if (gps_send_command(CFG_ENABLE_MESSAGE_GGA_RMC, 100))
+    {
+        ESP_LOGI("GPS", "Set enable NMEA message: GGA & RMC");
+        /* Wait for GPS to apply new settings */
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send configuration command: Set enable NMEA message: GGA & RMC");
+    }
+
+    /* Set GPS constellations */
+    if (gps_send_command(CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU, 100))
+    {
+        ESP_LOGI("GPS", "Set enable constellations GPS+BEIDOU");
+        /* Wait for GPS to apply new settings */
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send configuration command: Set enable constellations GPS+BEIDOU");
+    }
     /* --- FreeRTOS tasks ---------------------------------------------------- */
     //  * Task pinning:
     //  *   lvgl_port_task và ui_task chạy trên core 1 để tách biệt rendering
