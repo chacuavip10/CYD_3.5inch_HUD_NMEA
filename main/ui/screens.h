@@ -46,6 +46,8 @@ typedef struct _objects_t {
     lv_obj_t *long_info;
     lv_obj_t *gps_render_loading_indicator_1;
     lv_obj_t *moving;
+    lv_obj_t *rate_counter_label;
+    lv_obj_t *rate_counter_value;
 } objects_t;
 
 extern objects_t objects;

@@ -243,7 +243,7 @@ void create_screen_src_info() {
             // fix_info
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.fix_info = obj;
-            lv_obj_set_pos(obj, 65, 22);
+            lv_obj_set_pos(obj, 21, 22);
             lv_obj_set_size(obj, 344, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "FIX : NO FIX");
@@ -252,7 +252,7 @@ void create_screen_src_info() {
             // hdop_info
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.hdop_info = obj;
-            lv_obj_set_pos(obj, 65, 83);
+            lv_obj_set_pos(obj, 21, 63);
             lv_obj_set_size(obj, 344, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "HDOP: ~");
@@ -261,7 +261,7 @@ void create_screen_src_info() {
             // sat_info
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.sat_info = obj;
-            lv_obj_set_pos(obj, 65, 149);
+            lv_obj_set_pos(obj, 21, 106);
             lv_obj_set_size(obj, 147, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "SAT : 99");
@@ -270,7 +270,7 @@ void create_screen_src_info() {
             // lat_info
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lat_info = obj;
-            lv_obj_set_pos(obj, 65, 207);
+            lv_obj_set_pos(obj, 21, 149);
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "LAT : ~");
@@ -279,7 +279,7 @@ void create_screen_src_info() {
             // long_info
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.long_info = obj;
-            lv_obj_set_pos(obj, 65, 264);
+            lv_obj_set_pos(obj, 21, 191);
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "LONG: ~");
@@ -298,10 +298,28 @@ void create_screen_src_info() {
             // moving
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.moving = obj;
-            lv_obj_set_pos(obj, 223, 149);
+            lv_obj_set_pos(obj, 179, 106);
             lv_obj_set_size(obj, 226, 32);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "IS_MOVING: ~");
+        }
+        {
+            // rate_counter_label
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.rate_counter_label = obj;
+            lv_obj_set_pos(obj, 22, 236);
+            lv_obj_set_size(obj, 407, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "(NMEA, GGA, RMC)/s ->");
+        }
+        {
+            // rate_counter_value
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.rate_counter_value = obj;
+            lv_obj_set_pos(obj, 22, 273);
+            lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "0,0,0");
         }
     }
     

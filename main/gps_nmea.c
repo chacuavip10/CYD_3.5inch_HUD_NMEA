@@ -15,8 +15,15 @@
 
 #include "gps_nmea.h"
 
-#include <string.h> /* memset */
-#include <math.h>   /* floor  */
+#include <string.h>    /* memset */
+#include <math.h>      /* floor  */
+#include "esp_timer.h" /* esp_timer_get_time for stats */
+typedef enum
+{
+    NMEA_TYPE_GGA = 0,
+    NMEA_TYPE_RMC = 1,
+    NMEA_TYPE_OTHER = 2
+} nmea_sentence_type_t;
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Macro tiện ích nội bộ                                                      */
@@ -389,6 +396,53 @@ static void parse_rmc(nmea_parser_t *p, const char *sentence)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/*  Thống kê tốc độ bản tin                                                    */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Cập nhật tốc độ bản tin (gọi mỗi khi có câu hợp lệ).
+ *
+ * @param p      Parser context.
+ * @param type   0 = total, 1 = GGA, 2 = RMC
+ */
+static void nmea_update_stats(nmea_parser_t *p, nmea_sentence_type_t type)
+{
+    int64_t now_us = esp_timer_get_time();
+    float delta_sec = (float)(now_us - p->last_stats_time_us) / 1000000.0f;
+
+    /* Tăng counter theo loại câu */
+    p->stats.total_sentences++;
+    switch (type)
+    {
+    case NMEA_TYPE_GGA:
+        p->stats.gga_sentences++;
+        break;
+    case NMEA_TYPE_RMC:
+        p->stats.rmc_sentences++;
+        break;
+    case NMEA_TYPE_OTHER:
+        p->stats.other_sentences++;
+        break;
+    }
+
+    /* Tính rate nếu đủ thời gian (tối thiểu 1 giây) */
+    if (delta_sec >= 1.0f)
+    {
+        p->stats.total_rate_per_sec = p->stats.total_sentences / delta_sec;
+        p->stats.gga_rate_per_sec = p->stats.gga_sentences / delta_sec;
+        p->stats.rmc_rate_per_sec = p->stats.rmc_sentences / delta_sec;
+        p->stats.other_rate_per_sec = p->stats.other_sentences / delta_sec;
+
+        /* Reset counters và thời gian */
+        p->stats.total_sentences = 0;
+        p->stats.gga_sentences = 0;
+        p->stats.rmc_sentences = 0;
+        p->stats.other_sentences = 0;
+        p->last_stats_time_us = now_us;
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /*  Dispatcher: nhận dạng loại câu và gọi parser tương ứng                    */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -426,12 +480,18 @@ static void dispatch_sentence(nmea_parser_t *p)
     if (sentence_is(buf, "GGA"))
     {
         parse_gga(p, buf);
+        nmea_update_stats(p, NMEA_TYPE_GGA); // Đếm và tính rate cho GGA
     }
     else if (sentence_is(buf, "RMC"))
     {
         parse_rmc(p, buf);
+        nmea_update_stats(p, NMEA_TYPE_RMC); // Đếm và tính rate cho RMC
     }
-    /* Các bản tin khác bị bỏ qua (module đã cấu hình chỉ xuất GGA+RMC) */
+    else
+    {
+        nmea_update_stats(p, NMEA_TYPE_OTHER); // Đếm các câu khác (GSV, GSA, VTG...)
+        /* Các bản tin khác bị bỏ qua, không parse */
+    }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -442,6 +502,8 @@ void nmea_parser_init(nmea_parser_t *p)
 {
     memset(p, 0, sizeof(*p));
     p->state = NMEA_STATE_IDLE;
+    p->last_stats_time_us = esp_timer_get_time(); /* Khởi tạo thời gian stats */
+    memset(&p->stats, 0, sizeof(p->stats));
 }
 
 /**
@@ -521,5 +583,22 @@ void nmea_parser_feed(nmea_parser_t *p, const uint8_t *raw, size_t len)
             p->state = NMEA_STATE_IDLE;
             break;
         }
+    }
+}
+
+void nmea_parser_get_stats(nmea_parser_t *p, nmea_stats_t *out)
+{
+    if (p && out)
+    {
+        *out = p->stats;
+    }
+}
+
+void nmea_parser_reset_stats(nmea_parser_t *p)
+{
+    if (p)
+    {
+        memset(&p->stats, 0, sizeof(p->stats));
+        p->last_stats_time_us = esp_timer_get_time();
     }
 }
