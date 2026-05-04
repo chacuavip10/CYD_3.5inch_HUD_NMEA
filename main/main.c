@@ -1290,6 +1290,11 @@ static void rtc_sync_task(void *arg)
                 /* Báo ui_task flash icon sync */
                 xTaskNotify(ui_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
                 ESP_LOGI("RTC", "[EVT_RTC_SYNC_DONE -> gps, ui]");
+                // Blinking Green LED
+                gpio_set_level(LED_GREEN, 0);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                gpio_set_level(LED_GREEN, 1);
+                vTaskDelay(pdMS_TO_TICKS(500));
 
 #if DEBUG_TASK
                 xTaskNotify(dbg_task_handle, EVT_RTC_SYNC_DONE, eSetBits);
@@ -1936,11 +1941,26 @@ void app_main(void)
     //  *
     //  *   Core 0: gps_task (priority 6), rtc_sync_task (priority 5)
     //  *   Core 1: lvgl_port_task (priority 5), ui_task (priority 5), debug_task (priority 5)
+#if defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)
+    // multi core
+    ESP_LOGI("MAIN", "Using both core for tasks!");
     xTaskCreatePinnedToCore(lvgl_port_task, "lvgl_port", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle, 1);
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, NULL, 5, &ui_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
     xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
 #if DEBUG_TASK
     xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
+#endif
+#else
+    // single core
+    ESP_LOGI("MAIN", "Single core chip, all tasks in one core!");
+    xTaskCreate(lvgl_port_task, "lvgl_port", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, &lvgl_task_handle);
+    xTaskCreate(ui_task, "ui_task", 6144, NULL, 5, &ui_task_handle);
+    xTaskCreate(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle);
+    xTaskCreate(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle);
+
+#if DEBUG_TASK
+    xTaskCreate(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle);
+#endif
 #endif
 }

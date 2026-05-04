@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
     "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
     "subnavigationSelectedItems": {}
   },
@@ -210,15 +210,16 @@
                 {
                   "type": "tab",
                   "id": "#1dbb8c0a-a1dd-4b75-af41-5b14f7a86078",
-                  "name": "src_info",
+                  "name": "src_main",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/2",
+                    "objectPath": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -238,8 +239,7 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -1088,12 +1088,12 @@
         "0": {
           "0": {},
           "1": {},
-          "2": {
-            "$selected": true
-          },
+          "2": {},
           "3": {},
           "4": {},
-          "5": {},
+          "5": {
+            "$selected": true
+          },
           "7": {
             "0": {}
           }
@@ -1104,7 +1104,7 @@
           "x": -240,
           "y": -160
         },
-        "scale": 1.25
+        "scale": 2
       },
       "timeline": {
         "isEditorActive": false,
