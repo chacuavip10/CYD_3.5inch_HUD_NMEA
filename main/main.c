@@ -99,6 +99,7 @@ static const char *TAG = "CYD_3.5inch_GPS_HUD";
 #define EVT_VALID_CHANGE_TO_VALID (1 << 9)
 #define EVT_VALID_CHANGE_TO_INVALID (1 << 10)
 #define EVT_SIGNAL_CHANGE (1 << 11)
+#define EVT_GPS_STATS_UPDATE (1 << 12) // Thêm event mới
 
 /* --- Task handles (populated at startup) --- */
 static TaskHandle_t gps_task_handle;
@@ -108,6 +109,15 @@ static TaskHandle_t lvgl_task_handle;
 #if DEBUG_TASK
 static TaskHandle_t dbg_task_handle;
 #endif
+
+/* ========================================================================== */
+/*                              RATE COUNTER                                  */
+/* ========================================================================== */
+
+/* Thống kê tốc độ bản tin – chỉ hiển thị khi DEBUG_TASK = 1 */
+static nmea_stats_t g_nmea_stats = {0};
+static int64_t g_last_stats_display_us = 0;
+#define STATS_DISPLAY_INTERVAL_MS 1000 /* Hiển thị stats mỗi 1 giây */
 
 /* ========================================================================== */
 /*                              LVGL CONFIG                                    */
@@ -207,6 +217,31 @@ static inline void gps_read_latest(gps_data_t *out)
         idx1 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
         *out = g_gps.buf[idx1];
         idx2 = __atomic_load_n(&g_gps.index, __ATOMIC_ACQUIRE);
+    } while (idx1 != idx2);
+}
+
+/* ========================================================================== */
+/*                              GPS STATS SHARED (cho UI)                      */
+/* ========================================================================== */
+
+/* Double buffer cho rate_counters (tương tự như gps_data) */
+typedef struct
+{
+    nmea_stats_t buf[2];
+    volatile uint8_t index;
+} nmea_stats_shared_t;
+
+static nmea_stats_shared_t g_nmea_stats_shared = {0};
+
+/* Helper để đọc rate_counters an toàn */
+static inline void nmea_stats_read_latest(nmea_stats_t *out)
+{
+    uint8_t idx1, idx2;
+    do
+    {
+        idx1 = __atomic_load_n(&g_nmea_stats_shared.index, __ATOMIC_ACQUIRE);
+        *out = g_nmea_stats_shared.buf[idx1];
+        idx2 = __atomic_load_n(&g_nmea_stats_shared.index, __ATOMIC_ACQUIRE);
     } while (idx1 != idx2);
 }
 
@@ -788,6 +823,24 @@ static void gps_task(void *arg)
                 dbg_evt_bits |= EVT_GPS_UPDATE;
 #endif
                 last_data = parser.data;
+                /* ── Lấy thống kê tốc độ bản tin ────────────────────────────── */
+                int64_t now_us = esp_timer_get_time();
+                if (now_us - g_last_stats_display_us > STATS_DISPLAY_INTERVAL_MS * 1000)
+                {
+                    nmea_parser_get_stats(&parser, &g_nmea_stats);
+                    /* Ghi vào shared double buffer cho UI */
+                    uint8_t next = g_nmea_stats_shared.index ^ 1;
+                    g_nmea_stats_shared.buf[next] = g_nmea_stats;
+                    __atomic_store_n(&g_nmea_stats_shared.index, next, __ATOMIC_RELEASE);
+                    ESP_LOGI("GPS_STATS", "=== NMEA Sentence Rate ===");
+                    ESP_LOGI("GPS_STATS", "Total : %.1f sentences/sec", (double)g_nmea_stats.total_rate_per_sec);
+                    ESP_LOGI("GPS_STATS", "GGA   : %.1f sentences/sec", (double)g_nmea_stats.gga_rate_per_sec);
+                    ESP_LOGI("GPS_STATS", "RMC   : %.1f sentences/sec", (double)g_nmea_stats.rmc_rate_per_sec);
+                    ESP_LOGI("GPS_STATS", "Other : %.1f sentences/sec", (double)g_nmea_stats.other_rate_per_sec);
+                    g_last_stats_display_us = now_us;
+                    /* Báo cho UI task biết có rate_counters mới */
+                    ui_evt_bits |= EVT_GPS_STATS_UPDATE;
+                }
             }
         }
         else
@@ -974,6 +1027,7 @@ static void ui_task(void *arg)
     local_time_t last_time = {};
     char lat_buf[32];
     char lon_buf[32];
+    nmea_stats_t rate_counters;
 
     last_time.valid = true;
 
@@ -1080,6 +1134,7 @@ static void ui_task(void *arg)
                                             LV_PART_MAIN | LV_STATE_DEFAULT);
                 lv_obj_set_style_text_color(objects.odometer_m, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
                 lv_obj_set_style_text_color(objects.second, lv_color_hex(0xa0a0a0), LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_label_set_text(objects.rate_counter_value, "0/s, 0/s, 0/s");
             }
 
             /* ── EVT_IS_MOVING_CHANGE ──────────────────────────────────────────── */
@@ -1215,6 +1270,16 @@ static void ui_task(void *arg)
                 lv_label_set_text(objects.gps_render_loading_indicator_1, frames[spinGps]);
 
                 last_data_signal_level = d.signal_level;
+            }
+
+            if (events & EVT_GPS_STATS_UPDATE)
+            {
+                nmea_stats_read_latest(&rate_counters);
+
+                /* Hiển thị lên các label (cần tạo thêm các label này trong UI) */
+                lv_label_set_text_fmt(objects.rate_counter_value, "%d/s, %d/s, %d/s", (int)(rate_counters.total_rate_per_sec + 0.5f),
+                                      (int)(rate_counters.gga_rate_per_sec + 0.5f),
+                                      (int)(rate_counters.rmc_rate_per_sec + 0.5f));
             }
 
             /* ── EVT_RTC_STALE ───────────────────────────────────────────── */

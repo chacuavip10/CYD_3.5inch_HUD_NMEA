@@ -30,6 +30,23 @@ extern "C"
 /** Độ dài tối đa một câu NMEA (không tính '$' và '*XX\r\n'). */
 #define NMEA_MAX_SENTENCE_LEN 96u
 
+    typedef struct
+    {
+        uint32_t total_sentences; // Tổng số câu NMEA hợp lệ (tất cả các loại)
+        uint32_t gga_sentences;   // Số câu GGA
+        uint32_t rmc_sentences;   // Số câu RMC
+        uint32_t other_sentences; // Số câu khác (GSV, GSA, GLL, VTG, ZDA, TXT...)
+
+        float total_rate_per_sec; // Tốc độ tổng (câu/giây)
+        float gga_rate_per_sec;   // Tốc độ GGA (câu/giây)
+        float rmc_rate_per_sec;   // Tốc độ RMC (câu/giây)
+        float other_rate_per_sec; // Tốc độ câu khác (câu/giây)
+    } nmea_stats_t;
+
+    /* ─────────────────────────────────────────────────────────────────────────── */
+    /*  Struct đo tốc độ bản tin                                                   */
+    /* ─────────────────────────────────────────────────────────────────────────── */
+
     /* ─────────────────────────────────────────────────────────────────────────── */
     /*  Struct dữ liệu GPS – tất cả thông tin được lưu tại đây                    */
     /* ─────────────────────────────────────────────────────────────────────────── */
@@ -122,6 +139,9 @@ extern "C"
         gps_data_t data;                 /**< Dữ liệu GPS đã parse       */
         bool gga_updated;
         bool rmc_updated;
+        /* ── Thống kê tốc độ bản tin ──────────────────────────────────── */
+        nmea_stats_t stats;         /**< Thống kê NMEA              */
+        int64_t last_stats_time_us; /**< Thời điểm update stats cuối */
     } nmea_parser_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
@@ -146,6 +166,20 @@ extern "C"
      * @param len  Số byte trong block.
      */
     void nmea_parser_feed(nmea_parser_t *p, const uint8_t *raw, size_t len);
+    /**
+     * @brief Lấy thống kê tốc độ bản tin NMEA.
+     *
+     * @param p    Con trỏ tới parser context.
+     * @param out  Con trỏ tới nmea_stats_t để nhận dữ liệu.
+     */
+    void nmea_parser_get_stats(nmea_parser_t *p, nmea_stats_t *out);
+
+    /**
+     * @brief Reset thống kê tốc độ bản tin NMEA.
+     *
+     * @param p    Con trỏ tới parser context.
+     */
+    void nmea_parser_reset_stats(nmea_parser_t *p);
 
 #ifdef __cplusplus
 }
