@@ -155,6 +155,286 @@ static inline void event_rate_read_latest(event_rate_stats_t *out)
 }
 
 /* ========================================================================== */
+/*                            NMEA CONFIG COMMAND HELPER                      */
+/* ========================================================================== */
+static char CFG_BAUDRATE_115200[] = "$PCAS01,5*19\r\n";
+static char CFG_UPDATE_RATE_1HZ[] = "$PCAS02,1000*2E\r\n";
+static char CFG_UPDATE_RATE_5HZ[] = "$PCAS02,200*1D\r\n";
+static char CFG_UPDATE_RATE_10HZ[] = "$PCAS02,100*1E\r\n";
+static char CFG_ENABLE_MESSAGE_GGA_RMC[] = "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n";
+static char CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU[] = "$PCAS04,13,13,11*29\r\n";
+static char CFG_ENABLE_CONSTELLATION_GPS_ONLY[] = "$PCAS04,1,1,1*18\r\n";
+static char CFG_ENABLE_CONSTELLATION_BEIDOU_ONLY[] = "$PCAS04,12,12,10*28\r\n";
+
+/**
+ * @brief Send NMEA command to GPS module via UART2 TX
+ *
+ * @param cmd NMEA command string (must include CR/LF termination)
+ * @param timeout_ms Timeout in milliseconds for write operation
+ * @return true if send successful, false otherwise
+ */
+static bool gps_send_command(const char *cmd, int timeout_ms)
+{
+    if (!cmd)
+        return false;
+
+    int len = strlen(cmd);
+    int written = uart_write_bytes(GPS_UART_PORT, cmd, len);
+
+    if (written == len)
+    {
+        ESP_LOGI("GPS", "Command sent: %s", cmd);
+        /* Flush TX buffer to ensure command is transmitted */
+        uart_wait_tx_done(GPS_UART_PORT, pdMS_TO_TICKS(timeout_ms));
+        return true;
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send command, written %d/%d bytes", written, len);
+        return false;
+    }
+}
+
+/* ========================================================================== */
+/*                        AUTO BAUDRATE DETECTION                            */
+/* ========================================================================== */
+
+/* Các baudrate phổ biến cần kiểm tra */
+#define BAUD_RATES_TO_TEST {115200, 9600, 38400, 57600, 230400, 460800}
+#define NUM_BAUD_RATES 6
+
+/* Thời gian test cho mỗi baudrate (ms) */
+#define BAUD_TEST_DURATION_MS 1500
+
+/* Số lượng bản tin NMEA tối thiểu cần nhận để xác nhận baudrate đúng */
+#define MIN_VALID_SENTENCES 2
+
+/* Lưu baudrate hiện tại của GPS module */
+static int g_current_gps_baudrate = TARGET_GPS_BAUD_RATE;
+
+/**
+ * @brief Kiểm tra xem buffer có chứa bản tin NMEA hợp lệ không
+ * @param data Buffer chứa dữ liệu UART
+ * @param len Độ dài buffer
+ * @return true nếu tìm thấy ít nhất 1 bản tin NMEA hợp lệ
+ */
+static bool is_valid_nmea_sentence(const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len - 6; i++)
+    {
+        /* Tìm ký tự '$' bắt đầu bản tin */
+        if (data[i] == '$')
+        {
+            /* Kiểm tra checksum pattern: $...*XX\r\n */
+            size_t j = i + 1;
+            while (j < len && data[j] != '*' && j - i < 80)
+            {
+                j++;
+            }
+            if (j < len && data[j] == '*')
+            {
+                /* Tìm thấy checksum, kiểm tra xem có 2 ký tự hex không */
+                if (j + 2 < len)
+                {
+                    char c1 = data[j + 1];
+                    char c2 = data[j + 2];
+                    if ((c1 >= '0' && c1 <= '9') || (c1 >= 'A' && c1 <= 'F'))
+                    {
+                        if ((c2 >= '0' && c2 <= '9') || (c2 >= 'A' && c2 <= 'F'))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Detect baudrate của GPS module
+ * @return baudrate detected, hoặc 0 nếu không detect được
+ */
+static int detect_gps_baudrate(void)
+{
+    const int baud_rates[] = BAUD_RATES_TO_TEST;
+    uint8_t test_buf[512];
+
+    ESP_LOGI("GPS_DETECT", "Starting automatic baudrate detection...");
+
+    for (int i = 0; i < NUM_BAUD_RATES; i++)
+    {
+        int current_baud = baud_rates[i];
+        ESP_LOGI("GPS_DETECT", "Testing baudrate: %d", current_baud);
+
+        /* Chỉ cần set baudrate, không cần xoá driver */
+        ESP_LOGI("GPS_DETECT", "Setting UART driver to baudrate: %d", current_baud);
+        ESP_ERROR_CHECK(uart_set_baudrate(GPS_UART_PORT, current_baud));
+        /* Verify GPS is now responding at 115200 */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        /* Flush buffer trước khi test */
+        uart_flush_input(GPS_UART_PORT);
+
+        /* Test trong BAUD_TEST_DURATION_MS */
+        TickType_t start_time = xTaskGetTickCount();
+        uint32_t valid_sentences = 0;
+
+        while ((xTaskGetTickCount() - start_time) < pdMS_TO_TICKS(BAUD_TEST_DURATION_MS))
+        {
+            int len = uart_read_bytes(GPS_UART_PORT, test_buf, sizeof(test_buf),
+                                      pdMS_TO_TICKS(50));
+            if (len > 0)
+            {
+                if (is_valid_nmea_sentence(test_buf, len))
+                {
+                    valid_sentences++;
+                    if (valid_sentences >= MIN_VALID_SENTENCES)
+                    {
+                        ESP_LOGI("GPS_DETECT", "✓ Baudrate %d confirmed! (%d valid sentences)",
+                                 current_baud, valid_sentences);
+                        return current_baud;
+                    }
+                }
+            }
+        }
+
+        ESP_LOGW("GPS_DETECT", "✗ Baudrate %d failed (only %d valid sentences)",
+                 current_baud, valid_sentences);
+    }
+
+    ESP_LOGW("GPS_DETECT", "Could not detect baudrate");
+    return 0;
+}
+
+/**
+ * @brief Cấu hình GPS module về baudrate 115200
+ * @param current_baud Baudrate hiện tại của module
+ * @return true nếu cấu hình thành công
+ */
+static bool configure_gps_to_115200(int current_baud)
+{
+    if (current_baud == 115200)
+    {
+        ESP_LOGI("GPS_CFG", "GPS already at 115200 baud");
+        return true;
+    }
+
+    ESP_LOGI("GPS_DETECT", "Setting UART driver to baudrate: %d", current_baud);
+    /* QUAN TRỌNG: Set UART về đúng baudrate hiện tại của GPS để gửi lệnh */
+    ESP_ERROR_CHECK(uart_set_baudrate(GPS_UART_PORT, current_baud));
+
+    /* Chờ UART ổn định */
+    vTaskDelay(pdMS_TO_TICKS(500));
+    /* Gửi lệnh thay đổi baudrate (PCAS01) */
+    /* Set GPS update rate */
+    if (gps_send_command(CFG_BAUDRATE_115200, 100))
+    {
+        ESP_LOGI("GPS", "Set module baudrate to 115200");
+        /* Wait for GPS to apply new settings */
+        vTaskDelay(pdMS_TO_TICKS(200));
+        ESP_ERROR_CHECK(uart_set_baudrate(GPS_UART_PORT, TARGET_GPS_BAUD_RATE));
+
+        ESP_LOGI("GPS", "Look like gps module is in factory setting. Setting now!");
+        /* Set GPS update rate */
+        if (gps_send_command(CFG_UPDATE_RATE_10HZ, 100))
+        {
+            ESP_LOGI("GPS", "Set update rate to 10hz");
+            /* Wait for GPS to apply new settings */
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        else
+        {
+            ESP_LOGE("GPS", "Failed to send configuration command: Set update rate to 10hz");
+        }
+
+        /* Set GPS sentences */
+        if (gps_send_command(CFG_ENABLE_MESSAGE_GGA_RMC, 100))
+        {
+            ESP_LOGI("GPS", "Set enable NMEA message: GGA & RMC");
+            /* Wait for GPS to apply new settings */
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        else
+        {
+            ESP_LOGE("GPS", "Failed to send configuration command: Set enable NMEA message: GGA & RMC");
+        }
+
+        /* Set GPS constellations */
+        if (gps_send_command(CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU, 100))
+        {
+            ESP_LOGI("GPS", "Set enable constellations GPS+BEIDOU");
+            /* Wait for GPS to apply new settings */
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        else
+        {
+            ESP_LOGE("GPS", "Failed to send configuration command: Set enable constellations GPS+BEIDOU");
+        }
+        /* Đợi GPS apply cài đặt mới */
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    else
+    {
+        ESP_LOGE("GPS", "Failed to send configuration command: Set module baudrate to 115200");
+    }
+
+    return true;
+}
+
+/**
+ * @brief Khởi tạo và tự động detect/config baudrate cho GPS
+ * @return true nếu thành công, false nếu thất bại
+ */
+static bool gps_init_with_auto_baudrate(void)
+{
+    ESP_LOGI("GPS", "Starting GPS with auto baudrate detection");
+
+    /* Step 1: Detect current baudrate */
+    int detected_baud = detect_gps_baudrate();
+
+    if (detected_baud == 0)
+    {
+        ESP_LOGE("GPS", "Failed to detect GPS baudrate!");
+        return false; // Trả về false khi không detect được
+    }
+
+    ESP_LOGI("GPS", "Detected baudrate: %d", detected_baud);
+    g_current_gps_baudrate = detected_baud;
+
+    /* Step 2: If not 115200, configure GPS to switch to 115200 */
+    if (detected_baud != TARGET_GPS_BAUD_RATE)
+    {
+        if (!configure_gps_to_115200(detected_baud))
+        {
+            ESP_LOGW("GPS", "Failed to configure GPS to 115200, continuing with detected baud");
+            return true;
+        }
+        /* Step 3: Switch UART to 115200 and verify */
+        ESP_LOGI("GPS_DETECT", "Setting UART driver to baudrate: %d", TARGET_GPS_BAUD_RATE);
+        ESP_ERROR_CHECK(uart_set_baudrate(GPS_UART_PORT, TARGET_GPS_BAUD_RATE));
+        g_current_gps_baudrate = TARGET_GPS_BAUD_RATE;
+        /* Verify GPS is now responding at 115200 */
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        uint8_t verify_buf[256];
+        int len = uart_read_bytes(GPS_UART_PORT, verify_buf, sizeof(verify_buf),
+                                  pdMS_TO_TICKS(200));
+        if (len > 0 && is_valid_nmea_sentence(verify_buf, len))
+        {
+            ESP_LOGI("GPS", "✓ GPS successfully reconfigured to 115200 baud");
+        }
+        else
+        {
+            ESP_LOGW("GPS", "⚠ GPS may not be at 115200");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/* ========================================================================== */
 /*                              LVGL CONFIG                                    */
 /* ========================================================================== */
 
@@ -370,47 +650,6 @@ static const void *signal_icon_table[] = {
     &SIG_GOOD_SYMBOL,      // SIG_GOOD
     &SIG_EX_SYMBOL         // SIG_EXCELLENT
 };
-
-/* ========================================================================== */
-/*                            NMEA CONFIG COMMAND HELPER                      */
-/* ========================================================================== */
-static char CFG_BAUDRATE_115200[] = "$PCAS01,5*19\r\n";
-static char CFG_UPDATE_RATE_1HZ[] = "$PCAS02,1000*2E\r\n";
-static char CFG_UPDATE_RATE_5HZ[] = "$PCAS02,200*1D\r\n";
-static char CFG_UPDATE_RATE_10HZ[] = "$PCAS02,100*1E\r\n";
-static char CFG_ENABLE_MESSAGE_GGA_RMC[] = "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n";
-static char CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU[] = "$PCAS04,13,13,11*29\r\n";
-static char CFG_ENABLE_CONSTELLATION_GPS_ONLY[] = "$PCAS04,1,1,1*18\r\n";
-static char CFG_ENABLE_CONSTELLATION_BEIDOU_ONLY[] = "$PCAS04,12,12,10*28\r\n";
-
-/**
- * @brief Send NMEA command to GPS module via UART2 TX
- *
- * @param cmd NMEA command string (must include CR/LF termination)
- * @param timeout_ms Timeout in milliseconds for write operation
- * @return true if send successful, false otherwise
- */
-static bool gps_send_command(const char *cmd, int timeout_ms)
-{
-    if (!cmd)
-        return false;
-
-    int len = strlen(cmd);
-    int written = uart_write_bytes(GPS_UART_PORT, cmd, len);
-
-    if (written == len)
-    {
-        ESP_LOGI("GPS", "Command sent: %s", cmd);
-        /* Flush TX buffer to ensure command is transmitted */
-        uart_wait_tx_done(GPS_UART_PORT, pdMS_TO_TICKS(timeout_ms));
-        return true;
-    }
-    else
-    {
-        ESP_LOGE("GPS", "Failed to send command, written %d/%d bytes", written, len);
-        return false;
-    }
-}
 
 /* ========================================================================== */
 /*                              UTILITY FUNCTIONS                              */
@@ -1487,7 +1726,7 @@ static void debug_task(void *arg)
  * module (e.g. to change output rate), allocate a TX pin and set up a TX
  * buffer in uart_driver_install().
  */
-static void gps_uart_init(void)
+static int gps_uart_init(void)
 {
     const uart_config_t uart_cfg = {
         .baud_rate = TARGET_GPS_BAUD_RATE,
@@ -1501,8 +1740,15 @@ static void gps_uart_init(void)
     ESP_ERROR_CHECK(uart_set_pin(GPS_UART_PORT, GPS_TX_GPIO, GPS_RX_GPIO,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(GPS_UART_PORT, UART_RX_RING_BUF, 0, 0, NULL, 0));
+    /* Auto-detect và cấu hình baudrate */
+    if (!gps_init_with_auto_baudrate())
+    {
+        ESP_LOGW("GPS", "Auto baudrate detection failed!");
+        return -1;
+    }
     ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d – %d baud",
              GPS_UART_PORT, GPS_RX_GPIO, TARGET_GPS_BAUD_RATE);
+    return 0;
 }
 
 /* ========================================================================== */
@@ -1666,45 +1912,21 @@ void app_main(void)
 
     /* --- RTC module and GPS UART ------------------------------------------- */
     gps_rtc_init();
-    gps_uart_init();
+    int uart_check = gps_uart_init();
     // Wait 100ms after UART INIT
     vTaskDelay((pdMS_TO_TICKS(100)));
-
-    /* Set GPS update rate */
-    if (gps_send_command(CFG_UPDATE_RATE_10HZ, 100))
+    if (uart_check == -1)
     {
-        ESP_LOGI("GPS", "Set update rate to 10hz");
-        /* Wait for GPS to apply new settings */
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    else
-    {
-        ESP_LOGE("GPS", "Failed to send configuration command: Set update rate to 10hz");
-    }
-
-    /* Set GPS sentences */
-    if (gps_send_command(CFG_ENABLE_MESSAGE_GGA_RMC, 100))
-    {
-        ESP_LOGI("GPS", "Set enable NMEA message: GGA & RMC");
-        /* Wait for GPS to apply new settings */
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    else
-    {
-        ESP_LOGE("GPS", "Failed to send configuration command: Set enable NMEA message: GGA & RMC");
+        ESP_LOGW("ERR", "Hanging forever!, blinking red led.");
+        while (1)
+        {
+            gpio_set_level(LED_RED, 0);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(LED_RED, 1);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
     }
 
-    /* Set GPS constellations */
-    if (gps_send_command(CFG_ENABLE_CONSTELLATION_DUAL_GPS_BEIDOU, 100))
-    {
-        ESP_LOGI("GPS", "Set enable constellations GPS+BEIDOU");
-        /* Wait for GPS to apply new settings */
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    else
-    {
-        ESP_LOGE("GPS", "Failed to send configuration command: Set enable constellations GPS+BEIDOU");
-    }
     /* --- FreeRTOS tasks ---------------------------------------------------- */
     //  * Task pinning:
     //  *   lvgl_port_task và ui_task chạy trên core 1 để tách biệt rendering
