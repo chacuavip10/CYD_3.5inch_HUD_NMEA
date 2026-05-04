@@ -310,7 +310,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 22, 236);
             lv_obj_set_size(obj, 407, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "(NMEA, GGA, RMC)/s ->");
+            lv_label_set_text_static(obj, "(NMEA,GGA,RMC,EVT)/s:");
         }
         {
             // rate_counter_value
@@ -319,7 +319,7 @@ void create_screen_src_info() {
             lv_obj_set_pos(obj, 22, 273);
             lv_obj_set_size(obj, 344, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "0,0,0");
+            lv_label_set_text_static(obj, "0, 0, 0, 0");
         }
     }
     

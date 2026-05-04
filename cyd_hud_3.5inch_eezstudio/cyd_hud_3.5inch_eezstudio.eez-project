@@ -1593,7 +1593,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "(NMEA, GGA, RMC)/s ->",
+              "text": "(NMEA,GGA,RMC,EVT)/s:",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false
@@ -1644,7 +1644,7 @@
               },
               "group": "",
               "groupIndex": 0,
-              "text": "0,0,0",
+              "text": "0, 0, 0, 0",
               "textType": "literal",
               "longMode": "WRAP",
               "recolor": false

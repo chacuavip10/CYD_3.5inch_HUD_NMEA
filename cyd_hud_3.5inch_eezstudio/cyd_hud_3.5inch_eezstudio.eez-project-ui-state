@@ -218,8 +218,7 @@
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -239,7 +238,8 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1149,17 +1149,18 @@
           "3": {},
           "4": {},
           "7": {},
-          "8": {
+          "8": {},
+          "10": {
             "$selected": true
           }
         }
       },
       "transform": {
         "translate": {
-          "x": -480,
-          "y": -320
+          "x": -561.3000000000001,
+          "y": -311.60000000000014
         },
-        "scale": 1.25
+        "scale": 2
       },
       "timeline": {
         "isEditorActive": false,
@@ -1210,7 +1211,7 @@
   ],
   "showInactiveFlowsInDebugger": true,
   "globalFlowZoom": true,
-  "flowZoom": 1.25,
+  "flowZoom": 2,
   "implementationLanguage": "C",
   "openDialogDefaultPath": "C:\\Users\\chacu\\Downloads\\fa-sharp-solid-900.woff"
 }
