@@ -52,14 +52,11 @@
 
 #include "gps_nmea.h"
 #include "gps_rtc.h"
-#include "lvgl.h"
 #include "ui/ui.h"
 #include "esp_lcd_st7796.h"
 #include "esp_lcd_touch_xpt2046.h"
 #include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
-#include "images.h"
 
 /* ========================================================================== */
 /*                              CONFIGURATION                                  */
