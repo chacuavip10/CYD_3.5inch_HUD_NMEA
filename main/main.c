@@ -183,7 +183,7 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define LCD_PARAM_BITS 8
 
 /*
- * LVGL draw buffer: 60 lines × 320 px × 2 bytes = ~37 KB per buffer.
+ * LVGL draw buffer: 100 lines × 320 px × 2 bytes = ~64 KB per buffer.
  * Two buffers enable double-buffered DMA transfers so the CPU can prepare
  * the next tile while the previous one is being clocked out over SPI.
  *
@@ -196,7 +196,7 @@ static SemaphoreHandle_t s_lvgl_mutex;
 #define LVGL_TASK_MAX_DELAY_MS 500 // Upper bound on vTaskDelay between lv_timer_handler() calls
 #define LVGL_TASK_MIN_DELAY_MS 10  // Lower bound – prevents busy-waiting the CPU
 #define LVGL_TASK_STACK_SIZE (8 * 1024)
-#define LVGL_TASK_PRIORITY 5
+#define LVGL_TASK_PRIORITY 6
 
 #define SYNC_SYMBOL "\xEF\x80\xA1"
 #define SIG_NONE_SYMBOL "\xEF\x9A\x94"
@@ -1999,19 +1999,19 @@ void app_main(void)
     ESP_LOGI("MAIN", "Using both core for tasks!");
     xTaskCreatePinnedToCore(ui_task, "ui_task", 6144, NULL, 5, &ui_task_handle, 1);
     xTaskCreatePinnedToCore(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle, 0);
-    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle, 0);
+    xTaskCreatePinnedToCore(rtc_sync_task, "rtc_sync_task", 2048, NULL, 4, &rtc_task_handle, 0);
 #if DEBUG_TASK
-    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle, 1);
+    xTaskCreatePinnedToCore(debug_task, "debug_task", 2048, NULL, 2, &dbg_task_handle, 1);
 #endif
 #else
     // single core
     ESP_LOGI("MAIN", "Single core chip, all tasks in one core!");
     xTaskCreate(ui_task, "ui_task", 6144, NULL, 5, &ui_task_handle);
     xTaskCreate(gps_task, "gps_task", 3072, NULL, 6, &gps_task_handle);
-    xTaskCreate(rtc_sync_task, "rtc_sync_task", 2048, NULL, 5, &rtc_task_handle);
+    xTaskCreate(rtc_sync_task, "rtc_sync_task", 2048, NULL, 4, &rtc_task_handle);
 
 #if DEBUG_TASK
-    xTaskCreate(debug_task, "debug_task", 2048, NULL, 5, &dbg_task_handle);
+    xTaskCreate(debug_task, "debug_task", 2048, NULL, 2, &dbg_task_handle);
 #endif
 #endif
 }
