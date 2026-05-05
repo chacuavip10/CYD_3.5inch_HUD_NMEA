@@ -1992,8 +1992,8 @@ void app_main(void)
     //  *   và RTC độc lập với render loop. Double-buffer + atomic swap đảm bảo
     //  *   handoff an toàn giữa hai core.
     //  *
-    //  *   Core 0: gps_task (priority 6), rtc_sync_task (priority 5)
-    //  *   Core 1: lvgl_port_task (priority 5), ui_task (priority 5), debug_task (priority 5)
+    //  *   Core 0: gps_task (priority 6), rtc_sync_task (priority 4)
+    //  *   Core 1: lvgl_port_task (priority 6), ui_task (priority 5), debug_task (priority 2)
 #if defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)
     // multi core
     ESP_LOGI("MAIN", "Using both core for tasks!");
