@@ -29,11 +29,7 @@
  *  $GPTXT,01,01,01,ANTENNA OK*35
  * ============================================================================
  *  TODO
- *  1) [IN PROGRESS] Chuyển các logic tính toán ra khỏi ui_task về gps_task
- *     (tính timeout, format lat/long, hdop_to_level …)
- *  2) Persist speed_compensation vào NVS để giữ giá trị qua reboot.
- *  3) Cân nhắc tách EVT_GPS_TIMEOUT thành event riêng thay vì kiểm tra
- *     trong ui_task mỗi frame.
+ *  1) check welcome sreen timeout because of WDT (add more vtaskdelay)
  */
 
 /* ========================================================================== */
