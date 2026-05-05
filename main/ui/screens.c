@@ -22,6 +22,42 @@ lv_obj_t *tick_value_change_obj;
 // Screens
 //
 
+void create_screen_welcome() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.welcome = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 480, 320);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // boot_text
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.boot_text = obj;
+            lv_obj_set_pos(obj, 41, 169);
+            lv_obj_set_size(obj, 415, 34);
+            lv_obj_set_style_text_font(obj, &ui_font_jb30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "Text");
+        }
+        {
+            // boot_percent
+            lv_obj_t *obj = lv_bar_create(parent_obj);
+            objects.boot_percent = obj;
+            lv_obj_set_pos(obj, 41, 236);
+            lv_obj_set_size(obj, 415, 32);
+        }
+        {
+            lv_obj_t *obj = lv_spinner_create(parent_obj);
+            lv_obj_set_pos(obj, 200, 22);
+            lv_obj_set_size(obj, 115, 122);
+        }
+    }
+    
+    tick_screen_welcome();
+}
+
+void tick_screen_welcome() {
+}
+
 void create_screen_src_main() {
     lv_obj_t *obj = lv_obj_create(0);
     objects.src_main = obj;
@@ -331,12 +367,13 @@ void tick_screen_src_info() {
 
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
+    tick_screen_welcome,
     tick_screen_src_main,
     tick_screen_src_time,
     tick_screen_src_info,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 3) {
+    if (screen_index >= 0 && screen_index < 4) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -438,6 +475,7 @@ void create_screens() {
     
     // Initialize screens
     // Create screens
+    create_screen_welcome();
     create_screen_src_main();
     create_screen_src_time();
     create_screen_src_info();
