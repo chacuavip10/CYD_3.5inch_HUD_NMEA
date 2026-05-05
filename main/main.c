@@ -1194,6 +1194,7 @@ static void gps_task(void *arg)
                     uint8_t next = g_nmea_stats_shared.index ^ 1;
                     g_nmea_stats_shared.buf[next] = g_nmea_stats;
                     __atomic_store_n(&g_nmea_stats_shared.index, next, __ATOMIC_RELEASE);
+#if DEBUG_TASK
                     ESP_LOGI("GPS_STATS", "=== NMEA Sentence Rate ===");
                     ESP_LOGI("GPS_STATS", "Total : %.1f sentences/sec", (double)g_nmea_stats.total_rate_per_sec);
                     ESP_LOGI("GPS_STATS", "GGA   : %.1f sentences/sec", (double)g_nmea_stats.gga_rate_per_sec);
@@ -1202,6 +1203,7 @@ static void gps_task(void *arg)
                     ESP_LOGI("GPS_EVT_RATE", "EVT_GPS_UPDATE rate: %.1f updates/sec (total: %lu)",
                              (double)current_rate_stats.update_rate_per_sec,
                              current_rate_stats.total_updates);
+#endif
                     g_last_stats_display_us = now_us;
                     /* Báo cho UI task biết có rate_counters mới */
                     ui_evt_bits |= EVT_GPS_STATS_UPDATE;
