@@ -11,16 +11,20 @@ extern "C" {
 
 enum ScreensEnum {
     _SCREEN_ID_FIRST = 1,
-    SCREEN_ID_SRC_MAIN = 1,
-    SCREEN_ID_SRC_TIME = 2,
-    SCREEN_ID_SRC_INFO = 3,
-    _SCREEN_ID_LAST = 3
+    SCREEN_ID_WELCOME = 1,
+    SCREEN_ID_SRC_MAIN = 2,
+    SCREEN_ID_SRC_TIME = 3,
+    SCREEN_ID_SRC_INFO = 4,
+    _SCREEN_ID_LAST = 4
 };
 
 typedef struct _objects_t {
+    lv_obj_t *welcome;
     lv_obj_t *src_main;
     lv_obj_t *src_time;
     lv_obj_t *src_info;
+    lv_obj_t *boot_text;
+    lv_obj_t *boot_percent;
     lv_obj_t *main_prev_scr;
     lv_obj_t *main_next_scr;
     lv_obj_t *speed_after_adjust;
@@ -51,6 +55,9 @@ typedef struct _objects_t {
 } objects_t;
 
 extern objects_t objects;
+
+void create_screen_welcome();
+void tick_screen_welcome();
 
 void create_screen_src_main();
 void tick_screen_src_main();
