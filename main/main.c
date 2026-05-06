@@ -1175,8 +1175,10 @@ static void gps_task(void *arg) {
     }
     last_stale_check = xTaskGetTickCount();
     /* ── Stale check: Internal tick comparison ────────── */
-    bool is_stale = (last_stale_check - last_sync_tick) >
-                    pdMS_TO_TICKS(GPS_RTC_STALE_THRESHOLD_MS);
+    bool is_stale =
+        (last_stale_check - last_sync_tick) >
+        (TickType_t)(GPS_RTC_STALE_THRESHOLD_MS / portTICK_PERIOD_MS);
+    ;
     if (is_stale != last_stale) {
       last_stale = is_stale;
       if (is_stale) {
