@@ -63,7 +63,6 @@
 /* ========================================================================== */
 
 #define DEBUG_TASK 0
-static const char *TAG = "CYD_3.5inch_GPS_HUD";
 
 /* --- GPIO & UART --- */
 #define GPS_UART_PORT UART_NUM_2
@@ -1680,8 +1679,8 @@ static int gps_uart_init(void) {
     ESP_LOGW("GPS", "Auto baudrate detection failed!");
     return -1;
   }
-  ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d – %d baud", GPS_UART_PORT,
-           GPS_RX_GPIO, TARGET_GPS_BAUD_RATE);
+  ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d | TX=GPIO%d – %d baud",
+           GPS_UART_PORT, GPS_RX_GPIO, GPS_TX_GPIO, TARGET_GPS_BAUD_RATE);
   return 0;
 }
 
