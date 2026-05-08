@@ -1681,7 +1681,7 @@ static int gps_uart_init(void) {
     ESP_LOGW("GPS", "Auto baudrate detection failed!");
     return -1;
   }
-  ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d | TX=GPIO%d – %d baud",
+  ESP_LOGI("GPS", "UART%d init OK – RX=GPIO%d TX=GPIO%d – %d baud",
            GPS_UART_PORT, GPS_RX_GPIO, GPS_TX_GPIO, TARGET_GPS_BAUD_RATE);
   return 0;
 }

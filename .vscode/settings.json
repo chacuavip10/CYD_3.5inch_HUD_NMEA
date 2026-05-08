@@ -5,7 +5,7 @@
     "target/esp32.cfg"
   ],
   "idf.portWin": "COM7",
-  "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf",
+  "idf.currentSetup": "C:\\esp\\v6.0.1\\esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
