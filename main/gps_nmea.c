@@ -14,9 +14,7 @@
  */
 
 #include "gps_nmea.h"
-
 #include "esp_timer.h" /* esp_timer_get_time for stats */
-#include <math.h>      /* floor  */
 #include <string.h>    /* memset */
 
 typedef enum {

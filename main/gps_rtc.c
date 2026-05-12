@@ -5,8 +5,7 @@
 
 #include "gps_rtc.h"
 
-#include <stdlib.h> /* setenv */
-#include <string.h>
+#include <stdlib.h>   /* setenv */
 #include <sys/time.h> /* settimeofday, gettimeofday */
 
 #include "esp_log.h"
