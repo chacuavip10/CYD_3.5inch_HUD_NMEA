@@ -13,23 +13,16 @@
 #include "esp_timer.h"
 
 static const char *TAG = "GPS_RTC";
-static int64_t s_last_sync_boot_ms = 0;
 static local_time_t cur_time;
-int calculate_weekday(int y, int m, int d) {
-  if (m < 3) {
-    m += 12;
-    y--;
-  }
 
-  int K = y % 100;
-  int J = y / 100;
+/* ───────────────────────────────────────────────────────────────────────── */
+/*  Internal helpers                                                         */
+/* ───────────────────────────────────────────────────────────────────────── */
 
-  int h = (d + (13 * (m + 1)) / 5 + K + K / 4 + J / 4 + 5 * J) % 7;
-
-  // h: 0=Saturday ... 6=Friday
-  int w = (h + 6) % 7; // 0=Sunday ... 6=Saturday
-
-  return w;
+/** Returns current boot time in milliseconds. Shared by should_sync and
+ *  is_stale to avoid repeating the /1000 pattern. */
+static inline int64_t boot_ms(void) {
+  return esp_timer_get_time() / 1000; /* µs → ms */
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */
@@ -41,11 +34,14 @@ int calculate_weekday(int y, int m, int d) {
 static bool s_rtc_synced = false;
 
 /**
- * UTC epoch timestamp of the most recent sync.
- * Used to calculate the interval until the next sync.
- * Value 0 means no sync has occurred yet.
+ * Boot-clock timestamp (ms) of the most recent RTC sync.
+ * Used by gps_rtc_should_sync() and gps_rtc_is_stale().
+ * 0 means no sync has occurred yet.
+ *
+ * NOTE: esp_timer_get_time() resets after deep sleep. If deep sleep is used,
+ * fall back to comparing UTC epochs via time() in gps_rtc_should_sync().
  */
-static time_t s_last_sync_utc = 0;
+static int64_t s_last_sync_boot_ms = 0;
 
 /* ───────────────────────────────────────────────────────────────────────── */
 /*  Public API                                                               */
@@ -71,24 +67,23 @@ void gps_rtc_init(void) {
 }
 
 bool gps_rtc_should_sync(const gps_data_t *d) {
-  /* Prerequisite: GPS must have a valid fix */
-  if (!d->valid) {
+  if (!d->valid)
     return false;
-  }
 
-  /* First time: sync immediately */
-  if (!s_rtc_synced) {
+  if (!s_rtc_synced)
     return true;
-  }
 
   /**
-   * Subsequent syncs: compare the current time_t against the last sync time.
-   * time() returns UTC epoch regardless of timezone → safe to use.
+   * Use boot timer instead of time() syscall.
+   *
+   * time() calls gettimeofday() internally → syscall + epoch conversion.
+   * boot_ms() reads esp_timer_get_time() → single register read, ~10 ns.
+   *
+   * Both measure elapsed time; boot_ms is cheaper and sufficient here
+   * since we only need "has GPS_RTC_SYNC_INTERVAL_S seconds passed".
    */
-  time_t now_utc;
-  time(&now_utc);
-
-  return (now_utc - s_last_sync_utc) >= (time_t)GPS_RTC_SYNC_INTERVAL_S;
+  return (boot_ms() - s_last_sync_boot_ms) >=
+         (int64_t)GPS_RTC_SYNC_INTERVAL_S * 1000;
 }
 
 void gps_rtc_sync(const gps_data_t *d) {
@@ -152,18 +147,15 @@ void gps_rtc_sync(const gps_data_t *d) {
 
   /* Update internal state */
   s_rtc_synced = true;
-  s_last_sync_utc = utc_epoch;
-  s_last_sync_boot_ms = esp_timer_get_time() / 1000; // µs → ms
+  s_last_sync_boot_ms = boot_ms();
   gps_rtc_get_local_time(&cur_time);
   /* Log for debugging */
-  ESP_LOGI(TAG, "RTC synced – GPS UTC: %04d-%02d-%02d %02d:%02d:%02d",
+  ESP_LOGI(TAG, "RTC synced – Local time: %04d-%02d-%02d %02d:%02d:%02d",
            cur_time.year, cur_time.month, cur_time.day, cur_time.hour,
            cur_time.minute, cur_time.second);
 }
 
 void gps_rtc_get_local_time(local_time_t *out) {
-  memset(out, 0, sizeof(*out));
-
   /* Not yet synced → report invalid */
   if (!s_rtc_synced) {
     out->valid = false;
@@ -195,7 +187,7 @@ void gps_rtc_get_local_time(local_time_t *out) {
   out->year = (uint16_t)(local_tm.tm_year + 1900);
   out->month = (uint8_t)(local_tm.tm_mon + 1);
   out->day = (uint8_t)(local_tm.tm_mday);
-  out->week_day = calculate_weekday(out->year, out->month, out->day);
+  out->week_day = (uint8_t)local_tm.tm_wday;
   out->hour = (uint8_t)(local_tm.tm_hour);
   out->minute = (uint8_t)(local_tm.tm_min);
   out->second = (uint8_t)(local_tm.tm_sec);
@@ -209,7 +201,5 @@ bool gps_rtc_is_synced(void) { return s_rtc_synced; }
 bool gps_rtc_is_stale(uint32_t threshold_ms) {
   if (!s_rtc_synced)
     return true;
-
-  int64_t now_ms = esp_timer_get_time() / 1000;
-  return (now_ms - s_last_sync_boot_ms) >= threshold_ms;
+  return (boot_ms() - s_last_sync_boot_ms) >= (int64_t)threshold_ms;
 }

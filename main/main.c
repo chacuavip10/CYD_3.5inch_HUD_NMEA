@@ -662,9 +662,9 @@ bool compare_ss(local_time_t *a, local_time_t *b) {
 bool compare_dd(local_time_t *a, local_time_t *b) { return (a->day == b->day); }
 
 /**
- * @brief Format a decimal-degree latitude into a human-readable DMS string.
+ * @brief Format decimal-degree latitude with hemisphere at the end.
  *
- * Output example: "LAT : 10°46.312'N"
+ * Output example: "LAT: 10.771917 N"
  *
  * @param lat  Decimal degrees (positive = North, negative = South).
  * @param buf  Destination character buffer.
@@ -672,16 +672,13 @@ bool compare_dd(local_time_t *a, local_time_t *b) { return (a->day == b->day); }
  */
 static void format_lat(double lat, char *buf, size_t len) {
   char hemi = (lat >= 0) ? 'N' : 'S';
-  lat = fabs(lat);
-  int deg = (int)lat;
-  double min = (lat - deg) * 60.0;
-  snprintf(buf, len, "LAT : %02d°%06.3f'%c", deg, min, hemi);
+  snprintf(buf, len, "LAT : %.6f %c", lat, hemi);
 }
 
 /**
- * @brief Format a decimal-degree longitude into a human-readable DMS string.
+ * @brief Format decimal-degree longitude with hemisphere at the end.
  *
- * Output example: "LONG: 106°41.534'E"
+ * Output example: "LONG: 106.702567 E"
  *
  * @param lon  Decimal degrees (positive = East, negative = West).
  * @param buf  Destination character buffer.
@@ -689,10 +686,7 @@ static void format_lat(double lat, char *buf, size_t len) {
  */
 static void format_lon(double lon, char *buf, size_t len) {
   char hemi = (lon >= 0) ? 'E' : 'W';
-  lon = fabs(lon);
-  int deg = (int)lon;
-  double min = (lon - deg) * 60.0;
-  snprintf(buf, len, "LONG: %03d°%06.3f'%c", deg, min, hemi);
+  snprintf(buf, len, "LONG: %.6f %c", lon, hemi);
 }
 
 /* ========================================================================== */

@@ -29,19 +29,24 @@ typedef enum {
 /*  Internal utility macros                                                  */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-/** Check whether a character is a decimal digit. */
-#define IS_DIGIT(c) ((c) >= '0' && (c) <= '9')
+/** Check whether a character is a decimal digit. 1 comparison via unsigned
+ * underflow — replaces (c>='0' && c<='9') */
+#define IS_DIGIT(c) ((uint8_t)((c) - '0') <= 9u)
 
-/** Convert a hex character (0-9, A-F, a-f) to its nibble value. Returns 0 for
- * invalid input. */
+/**
+ * hex_to_nibble — branchless, 3 ALU instructions
+ *
+ * ASCII bit pattern:
+ *   '0'–'9' = 0x30–0x39 → bit[6]=0 → (& 0xF) + 0
+ *   'A'–'F' = 0x41–0x46 → bit[6]=1 → (& 0xF) + 9
+ *   'a'–'f' = 0x61–0x66 → bit[6]=1 → (& 0xF) + 9
+ *
+ * NOTE: Cast to uint8_t before >> to avoid signed right-shift UB on GCC.
+ * NOTE: Returns incorrect value for invalid input — caller must validate.
+ */
 static inline uint8_t hex_to_nibble(char c) {
-  if (c >= '0' && c <= '9')
-    return (uint8_t)(c - '0');
-  if (c >= 'A' && c <= 'F')
-    return (uint8_t)(c - 'A' + 10);
-  if (c >= 'a' && c <= 'f')
-    return (uint8_t)(c - 'a' + 10);
-  return 0;
+  uint8_t u = (uint8_t)c;
+  return (u & 0xF) + (uint8_t)((u >> 6) * 9u);
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */
@@ -57,51 +62,54 @@ static inline uint8_t hex_to_nibble(char c) {
  * @return     Number of characters consumed.
  */
 static int parse_uint(const char *s, uint32_t *out) {
+  const char *p = s;
   uint32_t val = 0;
-  int n = 0;
-  while (IS_DIGIT(s[n])) {
-    val = val * 10u + (uint32_t)(s[n] - '0');
-    n++;
+
+  while (IS_DIGIT(*p)) {
+    val = (val << 3) + (val << 1) + (uint32_t)(*p - '0');
+    ++p;
   }
+
   *out = val;
-  return n;
+  return (int)(p - s);
 }
 
 /**
- * @brief Parse an unsigned floating-point number (e.g. "123.456") from a
- * string.
+ * Parse ASCII decimal → float.
+ * Returns number of characters consumed.
  *
- * @param s    Input string pointer.
- * @param out  Output result as a double.
- * @return     Number of characters consumed.
- */
-static int parse_double(const char *s, double *out) {
-  uint32_t int_part = 0;
-  int n = 0;
-  n += parse_uint(s, &int_part);
-  double val = (double)int_part;
-
-  if (s[n] == '.') {
-    n++; /* skip '.' */
-    double scale = 0.1;
-    while (IS_DIGIT(s[n])) {
-      val += (double)(s[n] - '0') * scale;
-      scale *= 0.1;
-      n++;
-    }
-  }
-  *out = val;
-  return n;
-}
-
-/**
- * @brief Parse a floating-point number, returning a float.
+ * Optimizations vs original (which called parse_double then cast):
+ *  - Entire integer path: zero FP ops in loop
+ *  - Fractional part: 1 FMUL via inv_pow10 LUT (no FDIV, no loop FP)
+ *  - Uses hardware single-precision FPU throughout (ESP32 FPU is SP only;
+ *    double is soft-float emulated, ~10x slower)
+ *
+ * Precision: ~6–7 significant decimal digits (float32), sufficient for NMEA.
  */
 static int parse_float(const char *s, float *out) {
-  double d = 0.0;
-  int n = parse_double(s, &d);
-  *out = (float)d;
-  return n;
+  /* 8 floats × 4 bytes = 32 bytes ROM; avoids runtime pow() or FDIV */
+  static const float inv_pow10[8] = {
+      1.0f, 0.1f, 0.01f, 0.001f, 0.0001f, 0.00001f, 0.000001f, 0.0000001f,
+  };
+
+  const char *p = s;
+  uint32_t int_part = 0;
+  uint32_t frac_part = 0;
+  uint8_t frac_n = 0;
+
+  while (IS_DIGIT(*p))
+    int_part = (int_part << 3) + (int_part << 1) + (uint32_t)(*p++ - '0');
+
+  if (*p == '.') {
+    ++p;
+    while (IS_DIGIT(*p) && frac_n < 7) {
+      frac_part = (frac_part << 3) + (frac_part << 1) + (uint32_t)(*p++ - '0');
+      ++frac_n;
+    }
+  }
+
+  *out = (float)int_part + (float)frac_part * inv_pow10[frac_n];
+  return (int)(p - s);
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */
@@ -149,10 +157,13 @@ static int field_len(const char *p) {
 /* ───────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Convert an NMEA coordinate (DDDMM.MMMM format) to decimal degrees.
+ * @brief Convert an NMEA coordinate (DDMM.MMMM or DDDMM.MMMM) to decimal
+ * degrees.
  *
- * Example: "10523.1234" → degrees=105, minutes=23.1234
- *          → decimal = 105 + 23.1234/60 = 105.38539
+ * Example: Latitude "3723.2475" (DDMM.MMMM) -> degrees=37, minutes=23.2475
+ *          -> decimal = 37 + 23.2475/60 = 37.3874583
+ * Example: Longitude "10523.1234" (DDDMM.MMMM) -> degrees=105, minutes=23.1234
+ *          -> decimal = 105 + 23.1234/60 = 105.38539
  *
  * @param nmea_val  NMEA numeric string.
  * @param dir       Direction character: 'N', 'S', 'E', or 'W'.
@@ -162,15 +173,37 @@ static double nmea_to_decimal_deg(const char *nmea_val, char dir) {
   if (!nmea_val || *nmea_val == '\0' || *nmea_val == ',')
     return 0.0;
 
-  double raw = 0.0;
-  parse_double(nmea_val, &raw);
+  /* Lookup table for powers of 10 (8 entries, 32 bytes ROM) */
+  static const uint32_t pow10_lut[8] = {1u,     10u,     100u,     1000u,
+                                        10000u, 100000u, 1000000u, 10000000u};
 
-  /* NMEA: DDDMM.MMMMM → extract degrees part (integer divide by 100) */
-  double degrees = floor(raw / 100.0);
-  double minutes = raw - (degrees * 100.0);
-  double decimal = degrees + minutes / 60.0;
+  const char *p = nmea_val;
+  uint32_t int_part = 0;  /* integer part (DDDMM) */
+  uint32_t frac_part = 0; /* fractional minutes digits as integer */
+  uint8_t frac_n = 0;     /* number of fractional digits */
 
-  /* Apply sign based on direction */
+  /* --- Parse integer part: DDDMM --- */
+  while (IS_DIGIT(*p))
+    int_part = (int_part << 3) + (int_part << 1) + (uint32_t)(*p++ - '0');
+
+  /* --- Parse fractional part: .MMMMM --- */
+  if (*p == '.') {
+    ++p;
+    while (IS_DIGIT(*p) && frac_n < 7) {
+      frac_part = (frac_part << 3) + (frac_part << 1) + (uint32_t)(*p++ - '0');
+      ++frac_n;
+    }
+  }
+
+  /* Extract degrees and minutes from int_part */
+  uint32_t deg = int_part / 100; /* whole degrees */
+  double minutes =
+      (int_part % 100)                         /* whole minutes */
+      + (double)frac_part / pow10_lut[frac_n]; /* fractional minutes */
+
+  double decimal = deg + minutes / 60.0;
+
+  /* Negative for South or West */
   if (dir == 'S' || dir == 'W')
     decimal = -decimal;
 

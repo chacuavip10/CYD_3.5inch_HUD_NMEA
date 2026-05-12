@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/0",
+    "selectedUserPageObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/3",
     "selectedFontObject": "[cyd_hud_3.5inch_eezstudio.eez-project]:/fonts/4",
     "subnavigationSelectedItems": {}
   },
@@ -1164,7 +1164,11 @@
     "[cyd_hud_3.5inch_eezstudio.eez-project]:/userPages/3[flow-state]": {
       "selectionFront": {},
       "selectionBack": {
-        "0": {}
+        "0": {
+          "6": {
+            "$selected": true
+          }
+        }
       },
       "transform": {
         "translate": {

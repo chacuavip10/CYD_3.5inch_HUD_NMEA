@@ -1539,7 +1539,7 @@
               "type": "LVGLLabelWidget",
               "left": 21,
               "top": 149,
-              "width": 344,
+              "width": 428,
               "height": 34,
               "customInputs": [],
               "customOutputs": [],
@@ -1582,7 +1582,7 @@
               "groupIndex": 0,
               "text": "LAT : ~",
               "textType": "literal",
-              "longMode": "WRAP",
+              "longMode": "CLIP",
               "recolor": false
             },
             {
@@ -1590,7 +1590,7 @@
               "type": "LVGLLabelWidget",
               "left": 21,
               "top": 191,
-              "width": 344,
+              "width": 428,
               "height": 34,
               "customInputs": [],
               "customOutputs": [],
@@ -1633,7 +1633,7 @@
               "groupIndex": 0,
               "text": "LONG: ~",
               "textType": "literal",
-              "longMode": "WRAP",
+              "longMode": "CLIP",
               "recolor": false
             },
             {
