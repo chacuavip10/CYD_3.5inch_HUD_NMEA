@@ -83,6 +83,7 @@
 #define UART_READ_TIMEOUT_MS 40
 #define GPS_COM_TIMEOUT_MS 2000 // declare signal lost after ? ms
 #define GPS_RTC_STALE_THRESHOLD_MS (2 * 60 * 60 * 1000) // 2h
+#define UI_READ_LOCAL_RTC (2 * 100)                     // 200ms
 
 /* --- FreeRTOS event bit flags (used with xTaskNotify) --- */
 #define EVT_GPS_UPDATE (1 << 0)       // gps_task → rtc_task, ui_task, dbg_task
@@ -1342,6 +1343,7 @@ static void ui_task(void *arg) {
   char lon_buf[32];
   nmea_stats_t rate_counters;
   event_rate_stats_t event_rate;
+  TickType_t last_ui_rtc_tick = 0;
 
   last_time.valid = true;
 
@@ -1386,38 +1388,42 @@ static void ui_task(void *arg) {
      * without new GPS packets. Compare each field individually to suppress
      * unnecessary redraws.
      */
-    gps_rtc_get_local_time(&current_time);
+    TickType_t now = xTaskGetTickCount();
+    if ((now - last_ui_rtc_tick) >= pdMS_TO_TICKS(UI_READ_LOCAL_RTC)) {
+      gps_rtc_get_local_time(&current_time);
+      last_ui_rtc_tick = now;
 
-    if (current_time.valid != last_time.valid) {
-      if (!current_time.valid) {
-        lv_label_set_text(objects.hour_minute, "--:--");
-        lv_label_set_text(objects.second, "--");
-        lv_label_set_text(objects.date, "Waiting GPS");
-      } else {
-        /* Force a full redraw on the first valid time reading */
-        last_time.hour = -1;
-        last_time.minute = -1;
-        last_time.second = -1;
-        last_time.day = -1;
+      if (current_time.valid != last_time.valid) {
+        if (!current_time.valid) {
+          lv_label_set_text(objects.hour_minute, "--:--");
+          lv_label_set_text(objects.second, "--");
+          lv_label_set_text(objects.date, "Waiting GPS");
+        } else {
+          /* Force a full redraw on the first valid time reading */
+          last_time.hour = -1;
+          last_time.minute = -1;
+          last_time.second = -1;
+          last_time.day = -1;
+        }
       }
+
+      if (current_time.valid) {
+        if (!compare_hh_mm(&current_time, &last_time))
+          lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d",
+                                current_time.hour, current_time.minute);
+
+        if (!compare_ss(&current_time, &last_time))
+          lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
+
+        if (!compare_dd(&current_time, &last_time))
+          lv_label_set_text_fmt(objects.date, "%s, %02d/%02d/%04d",
+                                WEEKDAY_STR[current_time.week_day],
+                                current_time.day, current_time.month,
+                                current_time.year);
+      }
+
+      last_time = current_time;
     }
-
-    if (current_time.valid) {
-      if (!compare_hh_mm(&current_time, &last_time))
-        lv_label_set_text_fmt(objects.hour_minute, "%02d:%02d",
-                              current_time.hour, current_time.minute);
-
-      if (!compare_ss(&current_time, &last_time))
-        lv_label_set_text_fmt(objects.second, "%02d", current_time.second);
-
-      if (!compare_dd(&current_time, &last_time))
-        lv_label_set_text_fmt(objects.date, "%s, %02d/%02d/%04d",
-                              WEEKDAY_STR[current_time.week_day],
-                              current_time.day, current_time.month,
-                              current_time.year);
-    }
-
-    last_time = current_time;
 
     /* ── SECTION 2: EVENT DISPATCH ───────────────────────────────────── */
     if (xTaskNotifyWait(0, 0xFFFFFFFF, &events, 0) == pdTRUE) {

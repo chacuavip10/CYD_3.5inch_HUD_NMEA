@@ -233,17 +233,17 @@ static void parse_gga(nmea_parser_t *p, const char *sentence) {
 
   /* ── Fields 2–3: Latitude + direction ────────────────────────────── */
   f = field_ptr(sentence, 2);
-  const char *f3 = field_ptr(sentence, 3);
-  if (f && f3 && field_len(f) > 0 && field_len(f3) > 0) {
-    d->latitude = nmea_to_decimal_deg(f, *f3);
-  }
+  // const char *f3 = field_ptr(sentence, 3);
+  // if (f && f3 && field_len(f) > 0 && field_len(f3) > 0) {
+  //   d->latitude = nmea_to_decimal_deg(f, *f3);
+  // }
 
   /* ── Fields 4–5: Longitude + direction ───────────────────────────── */
   f = field_ptr(sentence, 4);
-  const char *f5 = field_ptr(sentence, 5);
-  if (f && f5 && field_len(f) > 0 && field_len(f5) > 0) {
-    d->longitude = nmea_to_decimal_deg(f, *f5);
-  }
+  // const char *f5 = field_ptr(sentence, 5);
+  // if (f && f5 && field_len(f) > 0 && field_len(f5) > 0) {
+  //   d->longitude = nmea_to_decimal_deg(f, *f5);
+  // }
 
   /* ── Field 7: Number of satellites ───────────────────────────────── */
   f = field_ptr(sentence, 7);
