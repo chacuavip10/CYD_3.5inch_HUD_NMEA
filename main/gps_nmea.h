@@ -1,15 +1,15 @@
 /**
  * @file gps_nmea.h
- * @brief NMEA 0183 parser cho module ATGM336H – ESP-IDF 5.x / 6.x
+ * @brief NMEA 0183 parser for the ATGM336H module – ESP-IDF 5.x / 6.x
  *
- * Chỉ xử lý 2 loại bản tin:
- *   - GGA : lat/lon, số vệ tinh, HDOP, độ cao
- *   - RMC : lat/lon, tốc độ, hướng đi, ngày/giờ, trạng thái fix
+ * Handles two sentence types only:
+ *   - GGA : lat/lon, satellite count, HDOP, altitude
+ *   - RMC : lat/lon, speed, course, date/time, fix status
  *
- * Hỗ trợ cả prefix GP (GPS đơn chòm) và GN (multi-constellation).
+ * Supports both the GP (single-constellation GPS) and GN (multi-constellation) prefixes.
  *
- * Thuật toán FSM xử lý từng byte → không cần buffer lớn, không malloc,
- * không strtok. Checksum XOR được kiểm tra trước khi parse.
+ * A byte-by-byte FSM algorithm → no large buffers, no malloc, no strtok.
+ * XOR checksum is verified before parsing.
  */
 
 #pragma once
@@ -24,46 +24,47 @@ extern "C"
 #endif
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  Hằng số cấu hình                                                           */
+/*  Configuration constants                                                    */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/** Độ dài tối đa một câu NMEA (không tính '$' và '*XX\r\n'). */
+/** Maximum length of one NMEA sentence (excluding '$' and '*XX\r\n'). */
 #define NMEA_MAX_SENTENCE_LEN 96u
+
+    /* ─────────────────────────────────────────────────────────────────────────── */
+    /*  Message rate statistics struct                                             */
+    /* ─────────────────────────────────────────────────────────────────────────── */
 
     typedef struct
     {
-        uint32_t total_sentences; // Tổng số câu NMEA hợp lệ (tất cả các loại)
-        uint32_t gga_sentences;   // Số câu GGA
-        uint32_t rmc_sentences;   // Số câu RMC
-        uint32_t other_sentences; // Số câu khác (GSV, GSA, GLL, VTG, ZDA, TXT...)
+        uint32_t total_sentences; // Total valid NMEA sentences (all types)
+        uint32_t gga_sentences;   // Number of GGA sentences
+        uint32_t rmc_sentences;   // Number of RMC sentences
+        uint32_t other_sentences; // Number of other sentences (GSV, GSA, GLL, VTG, ZDA, TXT, ...)
 
-        float total_rate_per_sec; // Tốc độ tổng (câu/giây)
-        float gga_rate_per_sec;   // Tốc độ GGA (câu/giây)
-        float rmc_rate_per_sec;   // Tốc độ RMC (câu/giây)
-        float other_rate_per_sec; // Tốc độ câu khác (câu/giây)
+        float total_rate_per_sec; // Overall rate (sentences/second)
+        float gga_rate_per_sec;   // GGA rate (sentences/second)
+        float rmc_rate_per_sec;   // RMC rate (sentences/second)
+        float other_rate_per_sec; // Other sentence rate (sentences/second)
     } nmea_stats_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  Struct đo tốc độ bản tin                                                   */
-    /* ─────────────────────────────────────────────────────────────────────────── */
-
-    /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  Struct dữ liệu GPS – tất cả thông tin được lưu tại đây                    */
+    /*  FSM state enum                                                             */
     /* ─────────────────────────────────────────────────────────────────────────── */
 
     /**
-     * @brief Toàn bộ thông tin GPS trích xuất từ GGA + RMC.
+     * @brief FSM parser states.
      *
-     * Trường `valid` = true khi RMC báo trạng thái 'A' (Active / có fix).
-     * Trường `updated` được set = true mỗi khi parse thành công một bản tin;
-     * ứng dụng cần tự clear về false sau khi đọc.
+     * State diagram:
+     *   IDLE ──'$'──> SENTENCE ──'*'──> CKSUM_1 ──hex──> CKSUM_2 ──> IDLE
+     *                    │ (overflow/\r\n)                              ↑
+     *                    └──────────────────────────────────────────────┘
      */
     typedef enum
     {
-        NMEA_STATE_IDLE = 0, /**< Chờ ký tự '$' bắt đầu câu              */
-        NMEA_STATE_SENTENCE, /**< Đang đọc phần thân câu, tính checksum  */
-        NMEA_STATE_CKSUM_1,  /**< Đọc nibble cao của checksum (hex)      */
-        NMEA_STATE_CKSUM_2,  /**< Đọc nibble thấp của checksum (hex)     */
+        NMEA_STATE_IDLE = 0, /**< Waiting for the '$' start character       */
+        NMEA_STATE_SENTENCE, /**< Reading sentence body, accumulating XOR   */
+        NMEA_STATE_CKSUM_1,  /**< Reading high nibble of checksum (hex)     */
+        NMEA_STATE_CKSUM_2,  /**< Reading low nibble of checksum (hex)      */
     } nmea_state_t;
 
     typedef enum
@@ -74,110 +75,113 @@ extern "C"
         SIG_GOOD,
         SIG_EXCELLENT
     } signal_level_t;
+
+    /* ─────────────────────────────────────────────────────────────────────────── */
+    /*  GPS data struct – all parsed information is stored here                    */
+    /* ─────────────────────────────────────────────────────────────────────────── */
+
+    /**
+     * @brief All GPS information extracted from GGA and RMC sentences.
+     *
+     * `valid` is true when RMC reports status 'A' (Active / fix acquired).
+     * `seq` is incremented each time a complete GGA+RMC pair is successfully parsed.
+     */
     typedef struct
     {
-        /* ── Thời gian UTC (từ GGA hoặc RMC) ─────────────────────────────────── */
-        uint8_t hour;         /**< Giờ UTC  [0–23]                            */
-        uint8_t minute;       /**< Phút     [0–59]                            */
-        uint8_t second;       /**< Giây     [0–59]                            */
-        uint16_t millisecond; /**< Phần nghìn giây [0–999]                   */
+        /* ── UTC time (from RMC) ──────────────────────────────────────────────── */
+        uint8_t hour;         /**< UTC hour   [0–23]                    */
+        uint8_t minute;       /**< Minute     [0–59]                    */
+        uint8_t second;       /**< Second     [0–59]                    */
+        uint16_t millisecond; /**< Millisecond [0–999]                  */
 
-        /* ── Ngày tháng UTC (từ RMC) ─────────────────────────────────────────── */
-        uint8_t day;   /**< Ngày  [1–31]                               */
-        uint8_t month; /**< Tháng [1–12]                               */
-        uint16_t year; /**< Năm đầy đủ, vd: 2025                      */
+        /* ── UTC date (from RMC) ─────────────────────────────────────────────── */
+        uint8_t day;   /**< Day   [1–31]                                */
+        uint8_t month; /**< Month [1–12]                                */
+        uint16_t year; /**< Full year, e.g. 2025                        */
 
-        /* ── Vị trí ──────────────────────────────────────────────────────────── */
-        double latitude;  /**< Vĩ độ thập phân, + = Bắc, – = Nam        */
-        double longitude; /**< Kinh độ thập phân, + = Đông, – = Tây     */
+        /* ── Position ────────────────────────────────────────────────────────── */
+        double latitude;  /**< Decimal latitude,  + = North, – = South  */
+        double longitude; /**< Decimal longitude, + = East,  – = West   */
 
-        /* ── Chất lượng tín hiệu (từ GGA) ───────────────────────────────────── */
-        uint8_t satellites; /**< Số vệ tinh đang dùng                      */
-        float hdop;         /**< Horizontal Dilution of Precision           */
+        /* ── Signal quality (from GGA) ───────────────────────────────────────── */
+        uint8_t satellites; /**< Number of satellites in use            */
+        float hdop;         /**< Horizontal Dilution of Precision       */
         signal_level_t signal_level;
-        float altitude_m; /**< Độ cao so với mực nước biển (mét)         */
+        float altitude_m; /**< Altitude above mean sea level (meters)   */
 
-        /* ── Chuyển động (từ RMC) ────────────────────────────────────────────── */
-        float speed_kmh;  /**< Tốc độ km/h (đã chuyển từ knots)          */
-        float course_deg; /**< Hướng đi (độ, 0–360, 0 = Bắc)            */
+        /* ── Motion (from RMC) ───────────────────────────────────────────────── */
+        float speed_kmh;  /**< Speed in km/h (converted from knots)     */
+        float course_deg; /**< Course over ground (degrees, 0–360, 0=N) */
 
-        /* ── Chuyển động (từ RMC) ────────────────────────────────────────────── */
-        double odometer_m; /**< Odometer in met          */
-        bool is_moving;    /**speed > 0.8f          */
+        /* ── Odometry ────────────────────────────────────────────────────────── */
+        double odometer_m; /**< Cumulative distance travelled (meters)  */
+        bool is_moving;    /**< true when speed exceeds 0.8 km/h        */
 
-        /* ── Trạng thái ──────────────────────────────────────────────────────── */
-        bool valid;         /**< true = fix hợp lệ (RMC status == 'A')    */
-        bool valid_changed; // Flag báo hiệu trạng thái Fix vừa thay đổi ở frame này
-        uint32_t seq;       // version, tracking dữ liệu mới
+        /* ── Status ──────────────────────────────────────────────────────────── */
+        bool valid;         /**< true = valid fix (RMC status == 'A')   */
+        bool valid_changed; // Flag indicating the fix status changed in this frame
+        uint32_t seq;       // Version counter; incremented on each new GGA+RMC pair
     } gps_data_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  FSM parser context                                                          */
+    /*  FSM parser context                                                         */
     /* ─────────────────────────────────────────────────────────────────────────── */
 
     /**
-     * @brief Các trạng thái của FSM parser.
+     * @brief NMEA parser context – each UART port should have its own instance.
      *
-     * Sơ đồ:
-     *   IDLE ──'$'──> SENTENCE ──'*'──> CKSUM_1 ──hex──> CKSUM_2 ──> IDLE
-     *                    │ (overflow/\r\n)                              ↑
-     *                    └──────────────────────────────────────────────┘
-     */
-
-    /**
-     * @brief Context của NMEA parser – mỗi port UART nên có một instance riêng.
-     *
-     * Khởi tạo bằng nmea_parser_init() trước khi dùng.
+     * Initialize with nmea_parser_init() before use.
      */
     typedef struct
     {
-        nmea_state_t state;              /**< Trạng thái FSM hiện tại    */
-        char buf[NMEA_MAX_SENTENCE_LEN]; /**< Buffer tích lũy câu NMEA   */
-        uint8_t buf_idx;                 /**< Con trỏ ghi vào buf        */
-        uint8_t cksum_calc;              /**< Checksum XOR đang tính     */
-        uint8_t cksum_recv;              /**< Checksum nhận được từ câu  */
-        gps_data_t data;                 /**< Dữ liệu GPS đã parse       */
+        nmea_state_t state;              /**< Current FSM state                   */
+        char buf[NMEA_MAX_SENTENCE_LEN]; /**< Sentence accumulation buffer        */
+        uint8_t buf_idx;                 /**< Write index into buf                */
+        uint8_t cksum_calc;              /**< Running XOR checksum                */
+        uint8_t cksum_recv;              /**< Checksum received from the sentence */
+        gps_data_t data;                 /**< Most recently parsed GPS data       */
         bool gga_updated;
         bool rmc_updated;
-        /* ── Thống kê tốc độ bản tin ──────────────────────────────────── */
-        nmea_stats_t stats;         /**< Thống kê NMEA              */
-        int64_t last_stats_time_us; /**< Thời điểm update stats cuối */
+        /* ── Message rate statistics ─────────────────────────────────────- */
+        nmea_stats_t stats;         /**< NMEA statistics                     */
+        int64_t last_stats_time_us; /**< Timestamp of last statistics update */
     } nmea_parser_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  API công khai                                                               */
+    /*  Public API                                                                 */
     /* ─────────────────────────────────────────────────────────────────────────── */
 
     /**
-     * @brief Khởi tạo parser về trạng thái ban đầu, xóa toàn bộ dữ liệu.
-     * @param p  Con trỏ tới nmea_parser_t.
+     * @brief Initialize the parser to its default state, clearing all data.
+     * @param p  Pointer to an nmea_parser_t instance.
      */
     void nmea_parser_init(nmea_parser_t *p);
 
     /**
-     * @brief Nạp một block byte thô từ UART vào FSM.
+     * @brief Feed a raw byte block from UART into the FSM.
      *
-     * Có thể gọi nhiều lần với chunk bất kỳ (không cần cắt theo câu).
-     * Khi một câu hoàn chỉnh và checksum hợp lệ được nhận, p->data sẽ
-     * được cập nhật và p->data.updated = true.
+     * May be called repeatedly with arbitrary chunk sizes (no sentence
+     * boundary alignment required). When a complete sentence with a valid
+     * checksum is received, p->data is updated and p->data.seq is incremented.
      *
-     * @param p    Con trỏ tới parser context.
-     * @param raw  Con trỏ tới block dữ liệu thô.
-     * @param len  Số byte trong block.
+     * @param p    Pointer to the parser context.
+     * @param raw  Pointer to the raw data block.
+     * @param len  Number of bytes in the block.
      */
     void nmea_parser_feed(nmea_parser_t *p, const uint8_t *raw, size_t len);
+
     /**
-     * @brief Lấy thống kê tốc độ bản tin NMEA.
+     * @brief Retrieve NMEA message rate statistics.
      *
-     * @param p    Con trỏ tới parser context.
-     * @param out  Con trỏ tới nmea_stats_t để nhận dữ liệu.
+     * @param p    Pointer to the parser context.
+     * @param out  Pointer to an nmea_stats_t struct to receive the data.
      */
     void nmea_parser_get_stats(nmea_parser_t *p, nmea_stats_t *out);
 
     /**
-     * @brief Reset thống kê tốc độ bản tin NMEA.
+     * @brief Reset NMEA message rate statistics.
      *
-     * @param p    Con trỏ tới parser context.
+     * @param p  Pointer to the parser context.
      */
     void nmea_parser_reset_stats(nmea_parser_t *p);
 

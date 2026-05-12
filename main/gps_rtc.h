@@ -1,18 +1,21 @@
 /**
  * @file gps_rtc.h
- * @brief Đồng bộ RTC của ESP32 từ dữ liệu GPS UTC, hiển thị giờ địa phương GMT+7.
+ * @brief Synchronize the ESP32 RTC from GPS UTC data and expose local time at GMT+7.
  *
- * Chiến lược:
- *   - GPS cung cấp thời gian UTC → lưu nguyên trong gps_data_t (không chỉnh sửa).
- *   - Dùng settimeofday() để nạp UTC vào system clock của ESP32.
- *   - Đặt timezone POSIX "ICT-7" → localtime() tự cộng +7h, xử lý rollover ngày/tháng.
- *   - Sync lần đầu khi GPS có fix hợp lệ, sau đó mỗi GPS_RTC_SYNC_INTERVAL_S giây.
- *   - Hiển thị thời gian bằng gettimeofday() + localtime_r(), KHÔNG đọc từ gps_data_t.
+ * Strategy:
+ *   - GPS provides UTC time → stored as-is in gps_data_t (never adjusted).
+ *   - settimeofday() loads UTC into the ESP32 system clock.
+ *   - POSIX timezone "ICT-7" is set → localtime() automatically adds +7h and
+ *     handles day/month rollover.
+ *   - First sync occurs when GPS has a valid fix; subsequent syncs every
+ *     GPS_RTC_SYNC_INTERVAL_S seconds.
+ *   - Time is read via gettimeofday() + localtime_r(), NOT from gps_data_t.
  *
- * Tại sao dùng timegm() thay vì mktime():
- *   mktime() hiểu struct tm là LOCAL time và trừ đi UTC offset khi quy đổi sang time_t.
- *   Nếu TZ = "ICT-7" và bạn truyền vào struct tm UTC, mktime() sẽ trừ thêm 7h → sai.
- *   timegm() (có trong ESP-IDF newlib) luôn hiểu struct tm là UTC → an toàn.
+ * Why timegm() instead of mktime():
+ *   mktime() interprets struct tm as LOCAL time and subtracts the UTC offset
+ *   when converting to time_t. With TZ = "ICT-7", passing a UTC struct tm to
+ *   mktime() would subtract an extra 7h → incorrect result.
+ *   timegm() (available in ESP-IDF newlib) always interprets struct tm as UTC → safe.
  */
 
 #pragma once
@@ -27,104 +30,105 @@ extern "C"
 #endif
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  Cấu hình                                                                    */
+/*  Configuration                                                              */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Chuỗi POSIX timezone cho UTC+7 (Việt Nam / Indochina Time).
- * Cú pháp POSIX: <tên><offset>, offset = số giờ phải CỘNG để ra UTC.
- * UTC+7 → cần trừ 7h để ra UTC → offset = -7 trong POSIX → "ICT-7".
+ * POSIX timezone string for UTC+7 (Vietnam / Indochina Time).
+ * POSIX syntax: <name><offset>, where offset = hours to ADD to local time to get UTC.
+ * UTC+7 → subtract 7h to get UTC → POSIX offset = -7 → "ICT-7".
  */
 #define GPS_RTC_TZ_STRING "ICT-7"
 
 /**
- * Chu kỳ đồng bộ RTC từ GPS sau lần đầu tiên (giây).
- * Mặc định 10 phút = 600 giây.
+ * RTC re-sync interval after the initial sync (seconds).
+ * Default: 10 minutes = 600 seconds.
  */
 #define GPS_RTC_SYNC_INTERVAL_S (10 * 60)
 
     /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  Struct thời gian địa phương – dùng để hiển thị                             */
+    /*  Local time struct – used for display                                       */
     /* ─────────────────────────────────────────────────────────────────────────── */
 
     /**
-     * @brief Thời gian địa phương (GMT+7) đã chuyển đổi, sẵn sàng hiển thị.
-     * Được điền bởi gps_rtc_get_local_time().
+     * @brief Converted local time (GMT+7), ready for display.
+     * Populated by gps_rtc_get_local_time().
      */
     typedef struct
     {
-        uint16_t year;    /**< Năm đầy đủ, vd: 2025               */
-        uint8_t month;    /**< Tháng [1–12]                        */
-        uint8_t day;      /**< Ngày  [1–31]                        */
-        uint8_t week_day; /**< day of week 0=Saturday ... 6=Friday */
-        uint8_t hour;     /**< Giờ   [0–23], đã cộng +7h          */
-        uint8_t minute;   /**< Phút  [0–59]                        */
-        uint8_t second;   /**< Giây  [0–59]                        */
-        // uint16_t millisecond; /**< Millisecond [0–999]                 */
-        bool valid;            /**< false = RTC chưa được sync lần nào */
-        uint32_t last_sync_ms; /**< millis since boot at last RTC sync */
+        uint16_t year;    /**< Full year, e.g. 2025                        */
+        uint8_t month;    /**< Month [1–12]                                */
+        uint8_t day;      /**< Day   [1–31]                                */
+        uint8_t week_day; /**< Day of week: 0=Sunday ... 6=Saturday        */
+        uint8_t hour;     /**< Hour  [0–23], already offset by +7h         */
+        uint8_t minute;   /**< Minute [0–59]                               */
+        uint8_t second;   /**< Second [0–59]                               */
+        // uint16_t millisecond; /**< Millisecond [0–999]                  */
+        bool valid;            /**< false = RTC has never been synced      */
+        uint32_t last_sync_ms; /**< Millis since boot at last RTC sync     */
     } local_time_t;
 
     /* ─────────────────────────────────────────────────────────────────────────── */
-    /*  API                                                                         */
+    /*  API                                                                        */
     /* ─────────────────────────────────────────────────────────────────────────── */
 
     /**
-     * @brief Khởi tạo timezone GMT+7 cho system.
+     * @brief Initialize the GMT+7 timezone for the system.
      *
-     * Phải gọi một lần trong app_main() trước khi dùng các hàm khác.
-     * Gọi setenv("TZ", "ICT-7", 1) + tzset() để mọi hàm time C standard
-     * (localtime, strftime, ...) đều tự động dùng GMT+7.
+     * Must be called once in app_main() before any other function in this module.
+     * Calls setenv("TZ", "ICT-7", 1) + tzset() so that all standard C time
+     * functions (localtime, strftime, ...) automatically use GMT+7.
      */
     void gps_rtc_init(void);
 
     /**
-     * @brief Kiểm tra có nên đồng bộ RTC từ GPS không.
+     * @brief Check whether the RTC should be synchronized from GPS.
      *
-     * Trả về true nếu:
-     *   - GPS có fix hợp lệ (d->valid == true)
-     *   - VÀ (chưa sync lần nào, HOẶC đã qua GPS_RTC_SYNC_INTERVAL_S kể từ lần sync cuối)
+     * Returns true if:
+     *   - GPS has a valid fix (d->valid == true)
+     *   - AND (RTC has never been synced, OR GPS_RTC_SYNC_INTERVAL_S seconds
+     *     have elapsed since the last sync)
      *
-     * @param d  Dữ liệu GPS hiện tại.
-     * @return   true = nên gọi gps_rtc_sync() ngay bây giờ.
+     * @param d  Current GPS data.
+     * @return   true = gps_rtc_sync() should be called now.
      */
     bool gps_rtc_should_sync(const gps_data_t *d);
 
     /**
-     * @brief Thực hiện đồng bộ RTC từ GPS UTC time.
+     * @brief Synchronize the RTC from GPS UTC time.
      *
-     * Dùng timegm() để convert UTC struct tm → time_t (không bị ảnh hưởng TZ).
-     * Sau đó settimeofday() để cập nhật system clock.
-     * Ghi nhớ timestamp để tính chu kỳ sync tiếp theo.
+     * Uses timegm() to convert a UTC struct tm → time_t (unaffected by TZ),
+     * then settimeofday() to update the system clock.
+     * Records the sync timestamp for computing the next sync interval.
      *
-     * @param d  Dữ liệu GPS hợp lệ (d->valid phải == true).
+     * @param d  Valid GPS data (d->valid must be true).
      */
     void gps_rtc_sync(const gps_data_t *d);
 
     /**
-     * @brief Lấy thời gian địa phương GMT+7 từ system RTC.
+     * @brief Get the current local time (GMT+7) from the system RTC.
      *
-     * Dùng gettimeofday() + localtime_r(). Timezone đã được set về ICT-7
-     * trong gps_rtc_init() nên localtime_r() tự động cộng +7h và xử lý
-     * rollover ngày/tháng/năm.
+     * Uses gettimeofday() + localtime_r(). Because the timezone was set to
+     * ICT-7 in gps_rtc_init(), localtime_r() automatically adds +7h and
+     * handles day/month/year rollover.
      *
-     * @param out  Con trỏ tới local_time_t để điền kết quả.
-     *             out->valid = false nếu RTC chưa được sync lần nào.
+     * @param out  Pointer to a local_time_t struct to populate.
+     *             out->valid is false if the RTC has never been synced.
      */
     void gps_rtc_get_local_time(local_time_t *out);
 
     /**
-     * @brief Kiểm tra RTC đã được sync từ GPS ít nhất một lần chưa.
-     * @return true = đã sync, thời gian hợp lệ.
+     * @brief Check whether the RTC has been synced from GPS at least once.
+     * @return true = synced; time is valid.
      */
     bool gps_rtc_is_synced(void);
 
     /**
-     * @brief Check if RTC sync is stale
+     * @brief Check if the RTC sync is stale.
      *
-     * @param threshold_ms Threshold in milliseconds (e.g. 2h = 7200000 ms)
-     * @return true  RTC is stale or not yet synchronized
-     * @return false RTC is fresh
+     * @param threshold_ms Staleness threshold in milliseconds (e.g. 2h = 7200000 ms).
+     * @return true  RTC is stale or has never been synchronized.
+     * @return false RTC sync is fresh.
      */
     bool gps_rtc_is_stale(uint32_t threshold_ms);
 
